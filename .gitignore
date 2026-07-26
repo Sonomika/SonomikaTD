@@ -1,0 +1,37 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+.venv/
+venv/
+.venv-tts/
+.env
+.DS_Store
+Thumbs.db
+*.log
+
+# Editor / IDE
+.vscode/
+
+# Local scratch, generated output, and caches
+tmp/
+sandbox/
+output/
+recordings/
+*_embedded_cache/
+*.bundle
+
+# User-specific performance sets (local media paths)
+sets/*.json
+
+# Local TouchDesigner projects and backups
+*.toe
+!SonomikaTD.toe
+Backup/
+
+# Local third-party TouchDesigner effects
+tox2/
+
+# Premium TOX live in private SonomikaTD_FX repo
+tox premium/

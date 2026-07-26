@@ -1,0 +1,43 @@
+{
+  "description": "Ableton Move / Schwung MIDI controller template. Pads: row bases L4=61, L3=53, L2=45, L1=37 (+1 per column). Knobs (MIDI Console Index, ch 1): L4=2, L3=3, L2=4, L1=5 -> opacity 0-127 to 0-1.",
+  "mappings": [
+    { "note": "61", "target": "L4_col1" },
+    { "note": "62", "target": "L4_col2" },
+    { "note": "63", "target": "L4_col3" },
+    { "note": "64", "target": "L4_col4" },
+    { "note": "65", "target": "L4_col5" },
+    { "note": "66", "target": "L4_col6" },
+    { "note": "67", "target": "L4_col7" },
+    { "note": "68", "target": "L4_col8" },
+    { "note": "53", "target": "L3_col1" },
+    { "note": "54", "target": "L3_col2" },
+    { "note": "55", "target": "L3_col3" },
+    { "note": "56", "target": "L3_col4" },
+    { "note": "57", "target": "L3_col5" },
+    { "note": "58", "target": "L3_col6" },
+    { "note": "59", "target": "L3_col7" },
+    { "note": "60", "target": "L3_col8" },
+    { "note": "45", "target": "L2_col1" },
+    { "note": "46", "target": "L2_col2" },
+    { "note": "47", "target": "L2_col3" },
+    { "note": "48", "target": "L2_col4" },
+    { "note": "49", "target": "L2_col5" },
+    { "note": "50", "target": "L2_col6" },
+    { "note": "51", "target": "L2_col7" },
+    { "note": "52", "target": "L2_col8" },
+    { "note": "37", "target": "L1_col1" },
+    { "note": "38", "target": "L1_col2" },
+    { "note": "39", "target": "L1_col3" },
+    { "note": "40", "target": "L1_col4" },
+    { "note": "41", "target": "L1_col5" },
+    { "note": "42", "target": "L1_col6" },
+    { "note": "43", "target": "L1_col7" },
+    { "note": "44", "target": "L1_col8" }
+  ],
+  "cc_mappings": [
+    { "cc": "2", "channel": "1", "target": "L4_opacity" },
+    { "cc": "3", "channel": "1", "target": "L3_opacity" },
+    { "cc": "4", "channel": "1", "target": "L2_opacity" },
+    { "cc": "5", "channel": "1", "target": "L1_opacity" }
+  ]
+}

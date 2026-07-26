@@ -1,0 +1,1186 @@
+openapi: 3.0.0
+info:
+  description: OpenAPI schema for generating TouchDesigner API client code
+  title: TouchDesigner API
+  version: 1.4.3
+servers:
+- description: TouchDesigner Web Server
+  url: "${process.env.TD_WEB_SERVER_HOST}:${process.env.TD_WEB_SERVER_PORT}"
+paths:
+  /api/nodes:
+    delete:
+      operationId: delete_node
+      parameters:
+      - description: "Path to the node to delete. e.g., \"/project1/geo1\""
+        in: query
+        name: nodePath
+        required: true
+        schema:
+          description: "e.g., \"/project1/geo1\""
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/delete_node_200_response'
+          description: Node deleted successfully
+      summary: Delete an existing node
+      x-openapi-router-controller: openapi_server.controllers.default_controller
+    get:
+      operationId: get_nodes
+      parameters:
+      - description: "Parent path  e.g., \"/project1\""
+        in: query
+        name: parentPath
+        required: true
+        schema:
+          description: "e.g., \"/project1\""
+          type: string
+      - description: "Pattern to match against node names e.g., \"null*\""
+        in: query
+        name: pattern
+        required: false
+        schema:
+          default: '*'
+          description: "e.g., \"null*\""
+          type: string
+      - description: Whether to include full node properties in the response (default
+          false for better performance)
+        in: query
+        name: includeProperties
+        required: false
+        schema:
+          default: false
+          description: Include node properties in response
+          type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/get_nodes_200_response'
+          description: List of nodes matching the specified criteria
+      summary: Get nodes in the path
+      x-openapi-router-controller: openapi_server.controllers.default_controller
+    post:
+      operationId: create_node
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/create_node_request'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/create_node_200_response'
+          description: Node created successfully
+      summary: Create a new node
+      x-openapi-router-controller: openapi_server.controllers.default_controller
+  /api/nodes/detail:
+    get:
+      description: "Retrieves detailed information about a specific node including\
+        \ its properties, parameters and connections"
+      operationId: get_node_detail
+      parameters:
+      - description: "Node path. e.g., \"/project1/textTOP\""
+        in: query
+        name: nodePath
+        required: true
+        schema:
+          description: "e.g., \"/project1/textTOP\""
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/get_node_detail_200_response'
+          description: Node properties
+      summary: Get node detail
+      x-openapi-router-controller: openapi_server.controllers.default_controller
+    patch:
+      operationId: update_node
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/update_node_request'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/update_node_200_response'
+          description: Information about the updated node
+      summary: Update node properties
+      x-openapi-router-controller: openapi_server.controllers.default_controller
+  /api/nodes/errors:
+    get:
+      description: Collects TouchDesigner error messages for a node and its children
+      operationId: get_node_errors
+      parameters:
+      - description: "Absolute path to the node to inspect. e.g., \"/project1/text1\""
+        in: query
+        name: nodePath
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/get_node_errors_200_response'
+          description: Node error report
+      summary: Get node errors
+      x-openapi-router-controller: openapi_server.controllers.default_controller
+  /api/td/classes:
+    get:
+      description: "Returns a list of Python classes, modules, and functions available\
+        \ in TouchDesigner"
+      operationId: get_td_python_classes
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/get_td_python_classes_200_response'
+          description: Successful response
+      summary: Get a list of Python classes and modules
+      x-openapi-router-controller: openapi_server.controllers.default_controller
+  /api/td/classes/{className}:
+    get:
+      description: "Returns detailed information about a specific Python class, module,\
+        \ or function including methods, properties, and documentation"
+      operationId: get_td_python_class_details
+      parameters:
+      - description: "Name of the class or module. e.g., \"textTOP\""
+        in: path
+        name: className
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/get_td_python_class_details_200_response'
+          description: Successful response
+      summary: Get details of a specific Python class or module
+      x-openapi-router-controller: openapi_server.controllers.default_controller
+  /api/td/modules/help:
+    get:
+      description: "Retrieve Python help() documentation for TouchDesigner modules,\
+        \ classes, or utilities like tdu."
+      operationId: get_module_help
+      parameters:
+      - description: "Module or class name (e.g., \"noiseCHOP\", \"td.noiseCHOP\"\
+          , \"tdu\")."
+        in: query
+        name: moduleName
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/get_module_help_200_response'
+          description: Successful response
+      summary: Get module/class Python help documentation
+      x-openapi-router-controller: openapi_server.controllers.default_controller
+  /api/td/nodes/exec:
+    post:
+      description: |
+        Call a method on the node at the specified path (e.g., /project1).
+        This allows operations equivalent to TouchDesigner's Python API such as
+        `parent_comp = op('/project1')` and `parent_comp.create('textTOP', 'myText')`.
+      operationId: exec_node_method
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/exec_node_method_request'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/exec_node_method_200_response'
+          description: Method call successful
+      summary: Call a method of the specified node
+      x-openapi-router-controller: openapi_server.controllers.default_controller
+  /api/td/server/exec:
+    post:
+      description: |
+        Execute a Python script directly in TouchDesigner.
+        Multiline scripts and scripts containing comments are supported.
+        The script can optionally set a `result` variable to explicitly return a value.
+        This endpoint allows you to interact with TouchDesigner nodes programmatically.
+      operationId: exec_python_script
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/exec_python_script_request'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/exec_python_script_200_response'
+          description: Script executed successfully
+      summary: Execute python code on the server
+      x-openapi-router-controller: openapi_server.controllers.default_controller
+  /api/td/server/td:
+    get:
+      description: Returns information about the TouchDesigner
+      operationId: get_td_info
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/get_td_info_200_response'
+          description: TouchDesigner information
+      summary: Get TouchDesigner information
+      x-openapi-router-controller: openapi_server.controllers.default_controller
+components:
+  schemas:
+    TdNode:
+      description: Information about a TouchDesigner node
+      example:
+        path: path
+        opType: opType
+        name: name
+        id: 0
+        properties:
+          key: ""
+      properties:
+        id:
+          title: id
+          type: integer
+        opType:
+          title: opType
+          type: string
+        name:
+          title: name
+          type: string
+        path:
+          title: path
+          type: string
+        properties:
+          additionalProperties: true
+          title: properties
+          type: object
+      required:
+      - id
+      - name
+      - opType
+      - path
+      - properties
+      title: TdNode
+      type: object
+    TdNodeFamilyType:
+      enum:
+      - COMP
+      - CHOP
+      - TOP
+      - SOP
+      - DAT
+      - MAT
+      - CUSTOM
+      type: string
+    TdNodeError:
+      description: Single node error entry
+      example:
+        nodeName: nodeName
+        opType: opType
+        nodePath: nodePath
+        message: message
+      properties:
+        nodePath:
+          description: Absolute operator path that reported the error
+          title: nodePath
+          type: string
+        nodeName:
+          description: Name of the operator
+          title: nodeName
+          type: string
+        opType:
+          description: TouchDesigner operator type
+          title: opType
+          type: string
+        message:
+          description: Error message reported by TouchDesigner
+          title: message
+          type: string
+      required:
+      - message
+      - nodeName
+      - nodePath
+      - opType
+      title: TdNodeError
+      type: object
+    TdNodeErrorReport:
+      description: Aggregated node error report
+      example:
+        nodeName: nodeName
+        hasErrors: true
+        opType: opType
+        nodePath: nodePath
+        errorCount: 0
+        errors:
+        - nodeName: nodeName
+          opType: opType
+          nodePath: nodePath
+          message: message
+        - nodeName: nodeName
+          opType: opType
+          nodePath: nodePath
+          message: message
+      properties:
+        nodePath:
+          description: Path that was inspected for errors
+          title: nodePath
+          type: string
+        nodeName:
+          description: Name of the inspected node
+          title: nodeName
+          type: string
+        opType:
+          description: Operator type of the inspected node
+          title: opType
+          type: string
+        errorCount:
+          description: Number of errors that were discovered
+          title: errorCount
+          type: integer
+        hasErrors:
+          description: Convenience flag indicating if any errors were found
+          title: hasErrors
+          type: boolean
+        errors:
+          description: Collection of raw node errors
+          items:
+            $ref: '#/components/schemas/TdNodeError'
+          title: errors
+          type: array
+      required:
+      - errorCount
+      - errors
+      - hasErrors
+      - nodeName
+      - nodePath
+      - opType
+      title: TdNodeErrorReport
+      type: object
+    TdPythonClassDetails:
+      description: Detailed information about a Python class or module
+      example:
+        methods:
+        - signature: signature
+          name: name
+          description: description
+        - signature: signature
+          name: name
+          description: description
+        name: name
+        description: description
+        type: class
+        properties:
+        - name: name
+          type: type
+          value: "{}"
+        - name: name
+          type: type
+          value: "{}"
+      properties:
+        name:
+          description: Name of the class or module
+          title: name
+          type: string
+        type:
+          description: Type of the Python entity
+          enum:
+          - class
+          - module
+          - function
+          - object
+          title: type
+          type: string
+        description:
+          description: Description of the class or module
+          title: description
+          type: string
+        methods:
+          description: List of methods available in the class or module
+          items:
+            $ref: '#/components/schemas/TdPythonMethodInfo'
+          title: methods
+          type: array
+        properties:
+          description: List of properties available in the class or module
+          items:
+            $ref: '#/components/schemas/TdPythonPropertyInfo'
+          title: properties
+          type: array
+      required:
+      - methods
+      - name
+      - properties
+      - type
+      title: TdPythonClassDetails
+      type: object
+    TdPythonClassInfo:
+      description: Information about a Python class or module available in TouchDesigner
+      example:
+        name: name
+        description: description
+        type: class
+      properties:
+        name:
+          description: Name of the class or module
+          title: name
+          type: string
+        type:
+          description: Type of the Python entity
+          enum:
+          - class
+          - module
+          - function
+          - object
+          title: type
+          type: string
+        description:
+          description: Description of the class or module
+          title: description
+          type: string
+      required:
+      - name
+      - type
+      title: TdPythonClassInfo
+      type: object
+    TdPythonMethodInfo:
+      description: Information about a Python method
+      example:
+        signature: signature
+        name: name
+        description: description
+      properties:
+        name:
+          description: Method name
+          title: name
+          type: string
+        signature:
+          description: Method signature including parameters
+          title: signature
+          type: string
+        description:
+          description: Description of the method
+          title: description
+          type: string
+      required:
+      - name
+      title: TdPythonMethodInfo
+      type: object
+    TdPythonPropertyInfo:
+      description: Information about a Python property
+      example:
+        name: name
+        type: type
+        value: "{}"
+      properties:
+        name:
+          description: Property name
+          title: name
+          type: string
+        type:
+          description: Type of the property
+          title: type
+          type: string
+        value:
+          description: Current value of the property (if serializable)
+          nullable: true
+          title: value
+          type: object
+      required:
+      - name
+      - type
+      title: TdPythonPropertyInfo
+      type: object
+    ModuleHelp:
+      description: Raw Python help() output for a TouchDesigner module or class
+      example:
+        helpText: helpText
+        moduleName: moduleName
+      properties:
+        moduleName:
+          description: Normalized module/class name the help text was generated for
+          title: moduleName
+          type: string
+        helpText:
+          description: Captured output from Python's help() function
+          title: helpText
+          type: string
+      required:
+      - helpText
+      - moduleName
+      title: ModuleHelp
+      type: object
+    get_nodes_200_response_data:
+      example:
+        nodes:
+        - path: path
+          opType: opType
+          name: name
+          id: 0
+          properties:
+            key: ""
+        - path: path
+          opType: opType
+          name: name
+          id: 0
+          properties:
+            key: ""
+      nullable: true
+      properties:
+        nodes:
+          description: Result of the execution
+          items:
+            $ref: '#/components/schemas/TdNode'
+          title: nodes
+          type: array
+      title: get_nodes_200_response_data
+      type: object
+    get_nodes_200_response:
+      example:
+        data:
+          nodes:
+          - path: path
+            opType: opType
+            name: name
+            id: 0
+            properties:
+              key: ""
+          - path: path
+            opType: opType
+            name: name
+            id: 0
+            properties:
+              key: ""
+        success: true
+        error: error
+      properties:
+        success:
+          description: Whether the operation was successful
+          title: success
+          type: boolean
+        data:
+          $ref: '#/components/schemas/get_nodes_200_response_data'
+        error:
+          description: Error message if the operation was not successful
+          nullable: true
+          title: error
+          type: string
+      required:
+      - data
+      - error
+      - success
+      title: get_nodes_200_response
+      type: object
+    create_node_request:
+      properties:
+        parentPath:
+          description: "Path to the parent node (e.g., /project1)"
+          title: parentPath
+          type: string
+        nodeType:
+          description: "Type of the node to create (e.g., textTop)"
+          title: nodeType
+          type: string
+        nodeName:
+          description: Name of the new node (optional)
+          title: nodeName
+          type: string
+      required:
+      - nodeType
+      - parentPath
+      title: create_node_request
+      type: object
+    create_node_200_response_data:
+      example:
+        result:
+          path: path
+          opType: opType
+          name: name
+          id: 0
+          properties:
+            key: ""
+      nullable: true
+      properties:
+        result:
+          $ref: '#/components/schemas/TdNode'
+      title: create_node_200_response_data
+      type: object
+    create_node_200_response:
+      example:
+        data:
+          result:
+            path: path
+            opType: opType
+            name: name
+            id: 0
+            properties:
+              key: ""
+        success: true
+        error: error
+      properties:
+        success:
+          description: Whether the operation was successful
+          title: success
+          type: boolean
+        data:
+          $ref: '#/components/schemas/create_node_200_response_data'
+        error:
+          description: Error message if the operation was not successful
+          nullable: true
+          title: error
+          type: string
+      required:
+      - data
+      - error
+      - success
+      title: create_node_200_response
+      type: object
+    delete_node_200_response_data:
+      example:
+        node:
+          path: path
+          opType: opType
+          name: name
+          id: 0
+          properties:
+            key: ""
+        deleted: true
+      nullable: true
+      properties:
+        deleted:
+          description: Whether the node was successfully deleted
+          title: deleted
+          type: boolean
+        node:
+          $ref: '#/components/schemas/TdNode'
+      title: delete_node_200_response_data
+      type: object
+    delete_node_200_response:
+      example:
+        data:
+          node:
+            path: path
+            opType: opType
+            name: name
+            id: 0
+            properties:
+              key: ""
+          deleted: true
+        success: true
+        error: error
+      properties:
+        success:
+          description: Whether the operation was successful
+          title: success
+          type: boolean
+        data:
+          $ref: '#/components/schemas/delete_node_200_response_data'
+        error:
+          description: Error message if the operation was not successful
+          nullable: true
+          title: error
+          type: string
+      required:
+      - data
+      - error
+      - success
+      title: delete_node_200_response
+      type: object
+    get_node_detail_200_response:
+      example:
+        data:
+          path: path
+          opType: opType
+          name: name
+          id: 0
+          properties:
+            key: ""
+        success: true
+        error: error
+      properties:
+        success:
+          description: Whether the operation was successful
+          title: success
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TdNode'
+        error:
+          description: Error message if the operation was not successful
+          nullable: true
+          title: error
+          type: string
+      required:
+      - data
+      - error
+      - success
+      title: get_node_detail_200_response
+      type: object
+    update_node_request:
+      properties:
+        nodePath:
+          description: "Path to the node (e.g., /project1/null1)"
+          title: nodePath
+          type: string
+        properties:
+          additionalProperties: true
+          title: properties
+          type: object
+      required:
+      - nodePath
+      - properties
+      title: update_node_request
+      type: object
+    update_node_200_response_data_failed_inner:
+      example:
+        reason: reason
+        name: name
+      properties:
+        name:
+          description: Name of the property that failed to update
+          title: name
+          type: string
+        reason:
+          description: Reason for the failure
+          title: reason
+          type: string
+      title: update_node_200_response_data_failed_inner
+      type: object
+    update_node_200_response_data:
+      example:
+        path: path
+        failed:
+        - reason: reason
+          name: name
+        - reason: reason
+          name: name
+        message: message
+        updated:
+        - updated
+        - updated
+      nullable: true
+      properties:
+        path:
+          description: Path of the node that was updated
+          title: path
+          type: string
+        updated:
+          description: List of property names that were successfully updated
+          items:
+            type: string
+          title: updated
+          type: array
+        failed:
+          description: List of properties that failed to update
+          items:
+            $ref: '#/components/schemas/update_node_200_response_data_failed_inner'
+          title: failed
+          type: array
+        message:
+          description: Summary message about the update operation
+          title: message
+          type: string
+      title: update_node_200_response_data
+      type: object
+    update_node_200_response:
+      example:
+        data:
+          path: path
+          failed:
+          - reason: reason
+            name: name
+          - reason: reason
+            name: name
+          message: message
+          updated:
+          - updated
+          - updated
+        success: true
+        error: error
+      properties:
+        success:
+          description: Whether the update operation was successful
+          title: success
+          type: boolean
+        data:
+          $ref: '#/components/schemas/update_node_200_response_data'
+        error:
+          description: Error message if the operation was not successful
+          nullable: true
+          title: error
+          type: string
+      required:
+      - data
+      - error
+      - success
+      title: update_node_200_response
+      type: object
+    get_node_errors_200_response:
+      example:
+        data:
+          nodeName: nodeName
+          hasErrors: true
+          opType: opType
+          nodePath: nodePath
+          errorCount: 0
+          errors:
+          - nodeName: nodeName
+            opType: opType
+            nodePath: nodePath
+            message: message
+          - nodeName: nodeName
+            opType: opType
+            nodePath: nodePath
+            message: message
+        success: true
+        error: error
+      properties:
+        success:
+          description: Whether the operation was successful
+          title: success
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TdNodeErrorReport'
+        error:
+          description: Error message if the operation was not successful
+          nullable: true
+          title: error
+          type: string
+      required:
+      - data
+      - error
+      - success
+      title: get_node_errors_200_response
+      type: object
+    get_td_python_classes_200_response_data:
+      example:
+        classes:
+        - name: name
+          description: description
+          type: class
+        - name: name
+          description: description
+          type: class
+      nullable: true
+      properties:
+        classes:
+          items:
+            $ref: '#/components/schemas/TdPythonClassInfo'
+          title: classes
+          type: array
+      title: get_td_python_classes_200_response_data
+      type: object
+    get_td_python_classes_200_response:
+      example:
+        data:
+          classes:
+          - name: name
+            description: description
+            type: class
+          - name: name
+            description: description
+            type: class
+        success: true
+        error: error
+      properties:
+        success:
+          description: Whether the operation was successful
+          title: success
+          type: boolean
+        data:
+          $ref: '#/components/schemas/get_td_python_classes_200_response_data'
+        error:
+          description: Error message if the operation was not successful
+          nullable: true
+          title: error
+          type: string
+      required:
+      - data
+      - error
+      - success
+      title: get_td_python_classes_200_response
+      type: object
+    get_td_python_class_details_200_response:
+      example:
+        data:
+          methods:
+          - signature: signature
+            name: name
+            description: description
+          - signature: signature
+            name: name
+            description: description
+          name: name
+          description: description
+          type: class
+          properties:
+          - name: name
+            type: type
+            value: "{}"
+          - name: name
+            type: type
+            value: "{}"
+        success: true
+        error: error
+      properties:
+        success:
+          description: Whether the operation was successful
+          title: success
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TdPythonClassDetails'
+        error:
+          description: Error message if the operation was not successful
+          nullable: true
+          title: error
+          type: string
+      required:
+      - data
+      - error
+      - success
+      title: get_td_python_class_details_200_response
+      type: object
+    get_module_help_200_response:
+      example:
+        data:
+          helpText: helpText
+          moduleName: moduleName
+        success: true
+        error: error
+      properties:
+        success:
+          description: Whether the operation was successful
+          title: success
+          type: boolean
+        data:
+          $ref: '#/components/schemas/ModuleHelp'
+        error:
+          description: Error message if the operation was not successful
+          nullable: true
+          title: error
+          type: string
+      required:
+      - data
+      - error
+      - success
+      title: get_module_help_200_response
+      type: object
+    exec_node_method_request_args_inner:
+      oneOf:
+      - type: string
+      - type: number
+      - type: boolean
+      title: exec_node_method_request_args_inner
+    exec_node_method_request:
+      properties:
+        nodePath:
+          description: "Path to the node (e.g., /project1/null1)"
+          title: nodePath
+          type: string
+        method:
+          description: Name of the method to call
+          title: method
+          type: string
+        args:
+          description: List of arguments for the method call
+          items:
+            $ref: '#/components/schemas/exec_node_method_request_args_inner'
+          title: args
+          type: array
+        kwargs:
+          additionalProperties: true
+          description: Keyword arguments for the method call
+          title: kwargs
+          type: object
+      required:
+      - method
+      - nodePath
+      title: exec_node_method_request
+      type: object
+    exec_node_method_200_response_data:
+      example:
+        result: "{}"
+      nullable: true
+      properties:
+        result:
+          description: Result of the method call. Can be any type (equivalent to unknown
+            in TypeScript).
+          title: result
+          type: object
+      required:
+      - result
+      title: exec_node_method_200_response_data
+      type: object
+    exec_node_method_200_response:
+      example:
+        data:
+          result: "{}"
+        success: true
+        error: error
+      properties:
+        success:
+          description: Whether the operation was successful
+          title: success
+          type: boolean
+        data:
+          $ref: '#/components/schemas/exec_node_method_200_response_data'
+        error:
+          description: Error message if the operation was not successful
+          nullable: true
+          title: error
+          type: string
+      required:
+      - data
+      - error
+      - success
+      title: exec_node_method_200_response
+      type: object
+    exec_python_script_request:
+      properties:
+        script:
+          description: "e.g., \"op('/project1/text_over_image').outputConnectors[0].connect(op('/project1/out1'))\""
+          title: script
+          type: string
+      required:
+      - script
+      title: exec_python_script_request
+      type: object
+    exec_python_script_200_response_data_result:
+      description: Result of the executed script
+      example:
+        value: "{}"
+      properties:
+        value:
+          description: "Return value of the executed script, can be any serializable\
+            \ value"
+          title: value
+          type: object
+      title: exec_python_script_200_response_data_result
+      type: object
+    exec_python_script_200_response_data:
+      example:
+        result:
+          value: "{}"
+      nullable: true
+      properties:
+        result:
+          $ref: '#/components/schemas/exec_python_script_200_response_data_result'
+      required:
+      - result
+      title: exec_python_script_200_response_data
+      type: object
+    exec_python_script_200_response:
+      example:
+        data:
+          result:
+            value: "{}"
+        success: true
+        error: error
+      properties:
+        success:
+          description: Whether the operation was successful
+          title: success
+          type: boolean
+        data:
+          $ref: '#/components/schemas/exec_python_script_200_response_data'
+        error:
+          description: Error message if the operation was not successful
+          nullable: true
+          title: error
+          type: string
+      required:
+      - data
+      - error
+      - success
+      title: exec_python_script_200_response
+      type: object
+    get_td_info_200_response_data:
+      example:
+        server: server
+        mcpApiVersion: mcpApiVersion
+        osVersion: osVersion
+        osName: osName
+        version: version
+      nullable: true
+      properties:
+        mcpApiVersion:
+          description: Version of the TouchDesigner MCP API server
+          title: mcpApiVersion
+          type: string
+        osName:
+          description: Operating system name
+          title: osName
+          type: string
+        osVersion:
+          description: Operating system version
+          title: osVersion
+          type: string
+        server:
+          description: Server name (typically "TouchDesigner")
+          title: server
+          type: string
+        version:
+          description: TouchDesigner version number
+          title: version
+          type: string
+      required:
+      - mcpApiVersion
+      - osName
+      - osVersion
+      - server
+      - version
+      title: get_td_info_200_response_data
+      type: object
+    get_td_info_200_response:
+      example:
+        data:
+          server: server
+          mcpApiVersion: mcpApiVersion
+          osVersion: osVersion
+          osName: osName
+          version: version
+        success: true
+        error: error
+      properties:
+        success:
+          description: Whether the operation was successful
+          title: success
+          type: boolean
+        data:
+          $ref: '#/components/schemas/get_td_info_200_response_data'
+        error:
+          description: Error message if the operation was not successful
+          nullable: true
+          title: error
+          type: string
+      required:
+      - data
+      - error
+      - success
+      title: get_td_info_200_response
+      type: object

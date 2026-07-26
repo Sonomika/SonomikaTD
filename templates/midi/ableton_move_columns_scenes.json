@@ -1,0 +1,39 @@
+{
+  "description": "Ableton Move / Schwung MIDI controller template. Top row (L4, notes 61-68): columns 1-8. Second row (L3, 53-60): columns 9-16. Bottom row (L1, 37-44): scenes 1-8. Middle row (L2) unmapped. Knobs ch1 CC 72-79 drive Map Controller dials 1-8 (Cell or Global tab).",
+  "mappings": [
+    { "note": "61", "target": "col1" },
+    { "note": "62", "target": "col2" },
+    { "note": "63", "target": "col3" },
+    { "note": "64", "target": "col4" },
+    { "note": "65", "target": "col5" },
+    { "note": "66", "target": "col6" },
+    { "note": "67", "target": "col7" },
+    { "note": "68", "target": "col8" },
+    { "note": "53", "target": "col9" },
+    { "note": "54", "target": "col10" },
+    { "note": "55", "target": "col11" },
+    { "note": "56", "target": "col12" },
+    { "note": "57", "target": "col13" },
+    { "note": "58", "target": "col14" },
+    { "note": "59", "target": "col15" },
+    { "note": "60", "target": "col16" },
+    { "note": "37", "target": "scene1" },
+    { "note": "38", "target": "scene2" },
+    { "note": "39", "target": "scene3" },
+    { "note": "40", "target": "scene4" },
+    { "note": "41", "target": "scene5" },
+    { "note": "42", "target": "scene6" },
+    { "note": "43", "target": "scene7" },
+    { "note": "44", "target": "scene8" }
+  ],
+  "cc_mappings": [
+    { "cc": "72", "channel": "1", "target": "map:1" },
+    { "cc": "73", "channel": "1", "target": "map:2" },
+    { "cc": "74", "channel": "1", "target": "map:3" },
+    { "cc": "75", "channel": "1", "target": "map:4" },
+    { "cc": "76", "channel": "1", "target": "map:5" },
+    { "cc": "77", "channel": "1", "target": "map:6" },
+    { "cc": "78", "channel": "1", "target": "map:7" },
+    { "cc": "79", "channel": "1", "target": "map:8" }
+  ]
+}
