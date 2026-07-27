@@ -28,11 +28,14 @@ sets/*.json
 # Local TouchDesigner projects and backups
 *.toe
 !/SonomikaTD.toe
-!/release/SonomikaTD.toe
 Backup/
 
 # Local third-party TouchDesigner effects
 tox2/
 
-# Premium TOX live in private SonomikaTD_FX repo
+# Premium TOX live in private SonomikaTD_FX:
+# https://github.com/Sonomika/SonomikaTD_FX
 tox premium/
+
+# Local release builds / distribution packages (not source)
+release/

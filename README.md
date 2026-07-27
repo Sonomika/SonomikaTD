@@ -30,7 +30,9 @@ SonomikaTD/
 | `scripts/performance_grid/embedded/` | TouchDesigner DAT scripts |
 | `scripts/performance_grid/builder/` | Network build, patch, reload API |
 | `templates/midi/` | MIDI mapping templates |
-| `tox/` | Effect + performance TOX assets |
+| `tox/` | Factory / MIT sample TOX assets |
+| `tox premium/` | Local-only premium effects — tracked in [SonomikaTD_FX](https://github.com/Sonomika/SonomikaTD_FX) |
+| `release/` | Local distribution builds (not in git) |
 
 Edit workflow detail: [scripts/performance_grid/README.md](scripts/performance_grid/README.md).
 
