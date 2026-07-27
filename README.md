@@ -19,8 +19,7 @@ SonomikaTD/
       builder/              # Network build / patch / reload
     patch_*.py              # Effect TOX helpers
   templates/midi/           # MIDI mapping templates
-  tox/                      # Effect + performance TOX assets
-  mcp/                      # TouchDesigner MCP server (optional, for Cursor)
+  tox/                      # Factory / MIT sample TOX assets
 ```
 
 | Path | Role |
@@ -114,4 +113,8 @@ Brief overview — full detail in [manual.md](manual.md):
 
 ## MCP (Cursor IDE)
 
-Optional: import `mcp/touchdesigner-mcp-td/mcp_webserver_base.tox` into `/project1`, then use Cursor's TouchDesigner MCP tools. The `.mcpb` bundle is in `mcp/`.
+Optional developer tooling — **not** part of the Sonomika app. Use the upstream project:
+
+https://github.com/8beeeaaat/touchdesigner-mcp
+
+Import `mcp_webserver_base.tox` into `/project1` from that repo (or its releases), then connect Cursor’s TouchDesigner MCP tools. License notice: [licenses/MIT-touchdesigner-mcp.txt](licenses/MIT-touchdesigner-mcp.txt).

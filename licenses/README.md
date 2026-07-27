@@ -11,10 +11,10 @@ See MIT-TD-Toxes.txt.
 
 ---
 
-touchdesigner-mcp (mcp_webserver_base.tox and mcp/touchdesigner-mcp-td)
+touchdesigner-mcp (optional Cursor / TD tooling)
 Copyright (c) 2025 sadao komaki
 
-Source:
+Source (not vendored in this repo):
 https://github.com/8beeeaaat/touchdesigner-mcp
 
 Licensed under the MIT License.

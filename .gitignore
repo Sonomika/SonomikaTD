@@ -39,3 +39,7 @@ tox premium/
 
 # Local release builds / distribution packages (not source)
 release/
+
+# TouchDesigner MCP (external — use upstream, not vendored here):
+# https://github.com/8beeeaaat/touchdesigner-mcp
+mcp/
