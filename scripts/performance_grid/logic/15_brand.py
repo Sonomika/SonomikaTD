@@ -36,6 +36,17 @@ def _ui_asset_path(filename):
     filename = str(filename or '').strip()
     if not filename:
         return ''
+    # Release builds embed UI media in /project1's virtual file system so the
+    # .toe remains portable when distributed without the assets directory.
+    try:
+        owner = op('/project1')
+        key = 'assets/' + filename
+        if owner is not None:
+            hits = owner.vfs.find(pattern=key)
+            if hits:
+                return hits[0].virtualPath
+    except Exception:
+        pass
     rel_paths = (
         ('assets', filename),
         ('SonomikaTD', 'assets', filename),

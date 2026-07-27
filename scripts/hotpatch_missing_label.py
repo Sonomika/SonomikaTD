@@ -102,38 +102,91 @@ def _hotpatch_module(mod):
         name = mod._file_display_name(path, clip_type)
         return name[:40] if name else chr(183)
 
+    def _cell_display_name(layer, col):
+        clip_type, path = mod._get(int(layer), int(col))
+        if not path:
+            return chr(183)
+        if mod._asset_file_missing(path, clip_type):
+            return 'missing'
+        name = mod._matrix_cell_label(layer, col)
+        if mod._is_bad_display_name(name):
+            name = mod._file_display_name(path, clip_type)
+        if mod._is_bad_display_name(name):
+            name = mod._live_cell_display_name(layer, col, clip_type)
+        if mod._is_bad_display_name(name):
+            name = chr(183)
+        return name[:40]
+
+    original_wire_tox = getattr(
+        mod, '_missing_safe_original_wire_tox', mod._wire_tox
+    )
+
+    def _wire_tox(slot, path, layer=None, col=None, force_reload=False):
+        if mod._asset_file_missing(path, 'tox'):
+            if layer is not None and col is not None:
+                mod._reset_slot_media(int(layer), int(col))
+            else:
+                tox = slot.op('tox') if slot is not None else None
+                if tox is not None:
+                    try:
+                        tox.par.externaltox = ''
+                    except Exception:
+                        pass
+                    tox.allowCooking = False
+            return False
+        return original_wire_tox(
+            slot, path, layer, col, force_reload=force_reload
+        )
+
+    mod._missing_safe_original_wire_tox = original_wire_tox
     mod._resolve_stored_asset_path = _resolve_stored_asset_path
     mod._clip_display_name = _clip_display_name
+    mod._cell_display_name = _cell_display_name
+    mod._wire_tox = _wire_tox
 
 
-def apply(layer=2, col=4, missing_path='tox/factory/particle_flowfields.tox'):
+def apply():
     pm = op('/project1/performance_mode')
     logic = pm.op('logic')
     info = _patch_logic_text(logic)
     mod = logic.module
     _hotpatch_module(mod)
     print('patch_info', info)
-    print('resolve', repr(mod._resolve_stored_asset_path(missing_path)))
-    print('missing?', mod._asset_file_missing(missing_path, 'tox'))
-    if missing_path:
-        mod._set(int(layer), int(col), 'tox', missing_path)
-        mod._refresh_cell_display(int(layer), int(col))
-        try:
-            mod._refresh_ui(full=True)
-        except Exception:
-            pass
-        lt = pm.op(
-            'ui/grid_stack/grid/row_{}/cell_{}_{}/cell_name/label_text'.format(
-                layer, layer, col
-            )
-        )
-        if lt is not None:
-            print(
-                'ui',
-                repr(lt.par.text.eval()),
-                float(lt.par.fontcolorr),
-                float(lt.par.fontcolorg),
-                float(lt.par.fontcolorb),
-            )
+    tbl = mod._table()
+    missing = []
+    if tbl is not None:
+        for idx in range(1, tbl.numRows):
+            try:
+                clip_type = str(tbl[idx, 'type']).strip()
+                path = str(tbl[idx, 'path']).strip()
+                if path and mod._asset_file_missing(path, clip_type):
+                    tbl[idx, 'label'] = 'missing'
+                    if clip_type.lower() == 'tox':
+                        try:
+                            if int(tbl[idx, 'scene']) == mod._active_scene():
+                                mod._reset_slot_media(
+                                    int(tbl[idx, 'layer']),
+                                    int(tbl[idx, 'col']),
+                                )
+                        except Exception:
+                            pass
+                    missing.append((
+                        int(tbl[idx, 'scene']),
+                        int(tbl[idx, 'layer']),
+                        int(tbl[idx, 'col']),
+                        path,
+                    ))
+            except Exception:
+                pass
+    try:
+        mod._refresh_ui(full=True)
+    except Exception:
+        pass
+    print('missing_cells', len(missing))
+    for scene, layer, col, path in missing:
+        print('  scene {} row {} col {} -> {}'.format(scene, layer, col, path))
     print('hotpatch_missing_label OK — save the .toe to keep DAT text')
     return True
+
+
+apply()

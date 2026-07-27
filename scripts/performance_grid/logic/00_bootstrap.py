@@ -122,11 +122,11 @@ def global_transport_playing():
 
 
 def _set_global_transport_playing(on):
-    """Mirror transport to the TD timeline without freezing UI cooks on pause.
+    """Keep TD's UI timeline running; pause media independently.
 
-    When paused, keep the timeline running at rate 0 so panel drags (Low/High
-    bands, dials, etc.) still receive frame updates. Media slots are paused
-    separately via _sync_layer_slot_pause_states.
+    A zero-rate timeline prevents Panel Execute/PopMenu interaction in some
+    packaged projects, including cell right-click menus. Grid media and TOX
+    animation are already paused separately by _sync_layer_slot_pause_states.
     """
     global _GLOBAL_TRANSPORT_PLAYING, _TIMELINE_RATE_WHEN_PLAYING
     on = bool(on)
@@ -160,10 +160,9 @@ def _set_global_transport_playing(on):
                 pass
             t.play = True
             try:
-                t.rate = 0
+                restore = float(_TIMELINE_RATE_WHEN_PLAYING or 0) or 60.0
+                t.rate = restore if restore >= 1.0 else 60.0
             except Exception:
-                # Fallback: if rate cannot be zeroed, leave play running so UI
-                # stays interactive; media is still paused via slot sync.
                 t.play = True
     except Exception:
         pass

@@ -359,29 +359,54 @@ def heal_canvas_tab(settings=None):
 
 def heal_fade_tab(settings=None):
     """Repair Fade tab pars (master Fade + Cells / Column toggles)."""
-    import sys
-    for key in list(sys.modules.keys()):
-        if key == 'performance_grid' or key.startswith('performance_grid.'):
-            del sys.modules[key]
+    settings = settings or _settings()
+    if settings is None:
+        return False
+    # Release .toe files may not ship the performance_grid Python package.
+    # Existing embedded Fade parameters can be healed without importing it.
+    found = False
+    for name, label in (
+        ('Fadeactive', 'Fade'),
+        ('Cellcrossfade', 'Cells'),
+        ('Columncrossfade', 'Column'),
+        ('Columncrossfadedur', 'Duration'),
+    ):
+        try:
+            getattr(settings.par, name).label = label
+            found = True
+        except Exception:
+            pass
+    if found:
+        return True
     try:
         from performance_grid.builder.helpers_settings import heal_fade_tab as _heal
         return _heal(settings)
-    except Exception as exc:
-        print('heal_fade_tab:', exc)
+    except Exception:
         return False
 
 
 def reset_fade_defaults_for_new_set():
     """New set: Fade off; Cells + Column crossfade toggles on."""
-    import sys
-    for key in list(sys.modules.keys()):
-        if key == 'performance_grid' or key.startswith('performance_grid.'):
-            del sys.modules[key]
+    settings = _settings()
+    if settings is None:
+        return False
+    changed = False
+    for name, value in (
+        ('Fadeactive', False),
+        ('Cellcrossfade', True),
+        ('Columncrossfade', True),
+    ):
+        try:
+            getattr(settings.par, name).val = value
+            changed = True
+        except Exception:
+            pass
+    if changed:
+        return True
     try:
         from performance_grid.builder.helpers_settings import reset_fade_defaults_for_new_set as _reset
-        return _reset(_settings())
-    except Exception as exc:
-        print('reset_fade_defaults_for_new_set:', exc)
+        return _reset(settings)
+    except Exception:
         return False
 
 
@@ -917,7 +942,10 @@ def _clear_grid_state():
                     col = int(str(slot.name).split('_')[-1])
                 except Exception:
                     continue
-                _reset_slot_media(layer, col)
+                # A genuinely new set must not serialize loaded networks from
+                # the previous set. Rebuild each TOX shell instead of merely
+                # blanking externaltox, which leaves old children in the .toe.
+                _reset_slot_media(layer, col, hard=True)
                 _reset_cell_preview(layer, col)
 
 
@@ -983,6 +1011,13 @@ def new_performance_set(set_name=None):
     if r is None:
         print('New set: performance_mode not found')
         return False
+    # Never carry developer probe payloads into a fresh set or release .toe.
+    # These historical keys can contain tens of megabytes of sampled values.
+    for key in ('old_live_probe', 'live_probe2', 'tmp_bind_test'):
+        try:
+            r.unstore(key)
+        except Exception:
+            pass
     _clear_grid_state()
     try:
         clear_global_fx(all_scenes=True)
@@ -1052,6 +1087,11 @@ def new_performance_set(set_name=None):
     switch_scene(1)
     col = 1
     trigger_column(col)
+    try:
+        _reset_empty_grid_previews()
+        _refresh_ui(full=True)
+    except Exception:
+        pass
     if set_name is None:
         set_name = _unique_new_set_name()
     else:

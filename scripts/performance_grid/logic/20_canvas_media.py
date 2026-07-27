@@ -589,7 +589,9 @@ def _apply_tox_render_scale(t, layer=None, col=None):
     if _protect_video_source_tox_resolution(t):
         return
     scale = _slot_render_scale(t.parent(), layer, col)
-    logo_protected_names = {'logo_file', 'logo_place', 'glitch_noise'} if _is_logo_overlay_tox(t) else set()
+    logo_protected_names = {
+        'logo_file', 'logo_aspect_fit', 'logo_place', 'glitch_noise'
+    } if _is_logo_overlay_tox(t) else set()
     if scale < 100:
         try:
             for child in t.children:
@@ -1182,6 +1184,11 @@ def _protect_generic_tox_resolution(t):
 
 def _is_video_source_tox(t):
     """TOX that captures/plays video directly (no row-below in1 effect chain)."""
+    # Logo overlays use a Movie File In TOP for their embedded still image;
+    # they are effects, not video-source TOXs. Treating them as video sources
+    # periodically forces every internal TOP to useinput and causes flicker.
+    if _is_logo_overlay_tox(t):
+        return False
     if t is None or t.op('out1') is None:
         return False
     if t.op('in1') is not None:
@@ -1332,15 +1339,14 @@ def _heal_logo_overlay_place_bindings(t):
     if lp is None:
         return False
     healed = False
-    w_expr = "op('select_video_in').width if op('select_video_in') and op('select_video_in').width > 256 else 1080"
-    h_expr = "op('select_video_in').height if op('select_video_in') and op('select_video_in').height > 256 else 1920"
+    w_expr = _canvas_w_expr()
+    h_expr = _canvas_h_expr()
+    sx_expr = 'parent().par.Logoscale'
     bindings = (
-        ('sx', 'parent().par.Logoscale'),
+        ('sx', sx_expr),
         ('sy', 'parent().par.Logoscale'),
         ('tx', 'parent().par.Positionx * 0.5'),
         ('ty', 'parent().par.Positiony * 0.5'),
-        ('resolutionw', w_expr),
-        ('resolutionh', h_expr),
     )
     for pn, expr in bindings:
         try:
@@ -1353,8 +1359,8 @@ def _heal_logo_overlay_place_bindings(t):
         except Exception:
             pass
     try:
-        if str(lp.par.outputresolution.eval()) != 'custom':
-            lp.par.outputresolution = 'custom'
+        if str(lp.par.outputresolution.eval()) != 'useinput':
+            lp.par.outputresolution = 'useinput'
             healed = True
     except Exception:
         pass
@@ -1364,6 +1370,33 @@ def _heal_logo_overlay_place_bindings(t):
             healed = True
     except Exception:
         pass
+    logo_fit = t.op('logo_aspect_fit')
+    if logo_fit is not None:
+        try:
+            logo_fit.store('sonomika_keep_custom_res', True, search=False)
+        except Exception:
+            pass
+        try:
+            if str(logo_fit.par.fit.eval()) != 'fitbest':
+                logo_fit.par.fit = 'fitbest'
+                healed = True
+        except Exception:
+            pass
+        for pn, expr in (('resolutionw', w_expr), ('resolutionh', h_expr)):
+            try:
+                p = logo_fit.par[pn]
+                if str(p.expr or '').strip() != expr or str(p.mode) != str(ParMode.EXPRESS):
+                    p.expr = expr
+                    p.mode = ParMode.EXPRESS
+                    healed = True
+            except Exception:
+                pass
+        try:
+            if str(logo_fit.par.outputresolution.eval()) != 'custom':
+                logo_fit.par.outputresolution = 'custom'
+                healed = True
+        except Exception:
+            pass
     try:
         if bool(lp.par.resmult.eval()):
             lp.par.resmult = False
@@ -1868,6 +1901,21 @@ def _tox_cell_keep_cooking(layer, col, ctype=None, path=None, live=False, slot=N
 
 
 def _wire_tox(slot, path, layer=None, col=None, force_reload=False):
+    # Keep missing assignments in clip_matrix for relinking, but never ask
+    # TouchDesigner to load an absent TOX. Otherwise the COMP can keep/show
+    # stale contents from a previously loaded effect.
+    if _asset_file_missing(path, 'tox'):
+        if layer is not None and col is not None:
+            _reset_slot_media(int(layer), int(col))
+        else:
+            t = slot.op('tox') if slot is not None else None
+            if t is not None:
+                try:
+                    t.par.externaltox = ''
+                except Exception:
+                    pass
+                t.allowCooking = False
+        return False
     t = slot.op('tox')
     if t is None:
         return
@@ -2363,7 +2411,34 @@ def _normalize_cell(layer, col, clip_type):
     return int(layer), int(col)
 
 
-def _reset_slot_media(layer, col):
+def _recreate_empty_slot_tox(slot):
+    """Destroy loaded TOX contents and rebuild the lightweight empty shell."""
+    if slot is None:
+        return None
+    old = slot.op('tox')
+    if old is not None:
+        try:
+            old.destroy()
+        except Exception:
+            return None
+    try:
+        tox = slot.create('baseCOMP', 'tox')
+        tox.par.enableexternaltox = True
+        black = tox.create('constantTOP', 'black')
+        _set_par(black, 'colorr', expr=CANVAS_BG_R_EXPR)
+        _set_par(black, 'colorg', expr=CANVAS_BG_G_EXPR)
+        _set_par(black, 'colorb', expr=CANVAS_BG_B_EXPR)
+        _set_par(black, 'alpha', 1)
+        _bind_canvas_res(black)
+        out = tox.create('outTOP', 'out1')
+        black.outputConnectors[0].connect(out.inputConnectors[0])
+        return tox
+    except Exception as exc:
+        print('Reset empty TOX shell failed:', exc)
+        return None
+
+
+def _reset_slot_media(layer, col, hard=False):
     """Clear slot wiring without touching clip_matrix (for scene switches)."""
     slot = _slot(layer, col)
     if slot is None:
@@ -2374,9 +2449,22 @@ def _reset_slot_media(layer, col):
         pass
     v = slot.op('video')
     if v is not None:
+        try:
+            v.lock = False
+        except Exception:
+            pass
         v.par.file = ''
         _set_video_active(v, False)
-    t = slot.op('tox')
+    # Freeze locks the fitted output TOP. A new/cleared set must unlock every
+    # cached frame or full-resolution images remain serialized in the .toe.
+    for name in ('video_fit', 'video_canvas_fit', 'tox_fit', 'pick', 'out1'):
+        node = slot.op(name)
+        if node is not None:
+            try:
+                node.lock = False
+            except Exception:
+                pass
+    t = _recreate_empty_slot_tox(slot) if hard else slot.op('tox')
     if t is not None:
         try:
             t.par.externaltox = ''

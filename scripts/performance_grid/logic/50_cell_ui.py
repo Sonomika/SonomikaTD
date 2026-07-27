@@ -470,14 +470,28 @@ def _reset_cell_preview(layer, col):
     cell = _grid_cell(r, layer, col)
     if cell is None:
         return
-    _, _, preview, txt = _ensure_cell_layout(cell)
+    thumb, _, preview, txt = _ensure_cell_layout(cell)
     if preview is not None:
         try:
             empty = preview.parent().op('empty')
             if empty is not None:
                 _style_empty_thumb(empty)
+                for node in (empty, preview):
+                    try:
+                        node.lock = False
+                        node.bypass = False
+                    except Exception:
+                        pass
                 preview.par.top = empty
                 preview.par.top.mode = ParMode.CONSTANT
+                empty.cook(force=True)
+                preview.cook(force=True)
+                if thumb is not None:
+                    # Point the panel directly at the blank TOP so it cannot
+                    # retain the Select TOP's previously cooked thumbnail.
+                    thumb.par.top = empty
+                    thumb.par.topfill = CELL_TOPFILL
+                    thumb.cook(force=True)
         except Exception:
             pass
     if txt is not None:
@@ -488,6 +502,15 @@ def _reset_cell_preview(layer, col):
         _THUMB_LAST_REFRESH.pop((int(layer), int(col)), None)
     except Exception:
         pass
+
+
+def _reset_empty_grid_previews():
+    """Force every empty cell panel back to its blank thumbnail."""
+    for layer in range(1, _num_layers() + 1):
+        for col in range(1, _num_cols() + 1):
+            _ctype, path = _get(layer, col)
+            if not str(path or '').strip():
+                _reset_cell_preview(layer, col)
 
 
 def _thumbnail_fps():

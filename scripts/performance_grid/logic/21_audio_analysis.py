@@ -1879,7 +1879,15 @@ def _apply_audio_device():
         dev_names = _as_audio_menu_list(dev.par.device.menuNames)
         token = _audio_device_token_from_setting(s.par.Audiodeviceindex.eval(), dev_names)
         if token in dev_names:
+            # Packaged projects can restore the menu value while the native
+            # capture endpoint remains unopened. Restart the CHOP whenever the
+            # requested token is not already live.
+            active = _audio_active()
+            dev.par.active = False
             dev.par.device = token
+            dev.par.active = bool(active)
+            if active:
+                dev.cook(force=True)
     except Exception:
         pass
 
@@ -4426,8 +4434,9 @@ def _sync_spectrogram_display(view, force=False):
     ov = view.op('spect_view')
     if ov is not None:
         try:
-            ov.par.display = False
-            ov.par.enable = False
+            # This viewer is legacy. On packaged project load it can briefly
+            # render the raw audiospectrum CHOP over the intended TOP display.
+            ov.destroy()
         except Exception:
             pass
     try:
@@ -4520,9 +4529,14 @@ def _ensure_audio_panel():
     except Exception:
         pass
 
+    # The spectrum is presented through view.par.top. Do not create an
+    # opviewerCOMP here; it exposes raw chan1/chan2 graphs during startup.
     ov = view.op('spect_view')
-    if ov is None:
-        ov = view.create('opviewerCOMP', 'spect_view')
+    if ov is not None:
+        try:
+            ov.destroy()
+        except Exception:
+            pass
     _ensure_audio_engine()
     _sync_spectrogram_display(view)
     _ensure_audio_hint(view)

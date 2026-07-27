@@ -27,7 +27,8 @@ sets/*.json
 
 # Local TouchDesigner projects and backups
 *.toe
-!SonomikaTD.toe
+!/SonomikaTD.toe
+!/release/SonomikaTD.toe
 Backup/
 
 # Local third-party TouchDesigner effects
