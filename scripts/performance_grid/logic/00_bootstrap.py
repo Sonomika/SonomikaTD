@@ -39,6 +39,130 @@ def _program_out_expr():
     return "op('global_fx_out')"
 
 
+def take_program_screenshot():
+    """Save the current post-effects program frame beside the project."""
+    r = _root()
+    settings = _settings_op()
+    source = r.op('global_fx_out') if r is not None else None
+    if source is None or settings is None:
+        print('Screenshot failed: final program output is unavailable')
+        return None
+    try:
+        folder_value = str(settings.par.Screenshotfolder.eval()).strip()
+        folder_value = folder_value or 'screenshots'
+        folder = (
+            os.path.normpath(folder_value)
+            if os.path.isabs(folder_value)
+            else os.path.join(str(project.folder), folder_value)
+        )
+        os.makedirs(folder, exist_ok=True)
+        stamp = __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')
+        path = os.path.join(folder, 'Sonomika_{}.png'.format(stamp))
+        source.cook(force=True)
+        source.save(path)
+        print('Screenshot saved -> {}'.format(path))
+        return path
+    except Exception as exc:
+        print('Screenshot failed: {}'.format(exc))
+        return None
+
+
+def toggle_screen_recording():
+    """Start or stop recording the final program, with optional app audio."""
+    r = _root()
+    settings = _settings_op()
+    try:
+        _pin_settings_tab('Rec')
+    except Exception:
+        pass
+    source = r.op('global_fx_out') if r is not None else None
+    if r is None or settings is None or source is None:
+        print('Recording failed: final program output is unavailable')
+        return False
+    recorder = r.op('screen_recorder')
+    if recorder is None:
+        try:
+            recorder = r.create('moviefileoutTOP', 'screen_recorder')
+            source.outputConnectors[0].connect(recorder.inputConnectors[0])
+            recorder.nodeX = source.nodeX + 220
+            recorder.nodeY = source.nodeY
+        except Exception as exc:
+            print('Recording failed: {}'.format(exc))
+            return False
+    try:
+        is_recording = bool(recorder.par.record.eval())
+    except Exception:
+        is_recording = False
+    if is_recording:
+        try:
+            recorder.par.record = False
+            settings.par.Recordingstatus = 'Stopped'
+            print('Screen recording stopped')
+            try:
+                _pin_settings_tab('Rec')
+            except Exception:
+                pass
+            return False
+        except Exception as exc:
+            print('Could not stop recording: {}'.format(exc))
+            return True
+    try:
+        folder_value = str(settings.par.Recordingfolder.eval()).strip()
+        folder_value = folder_value or 'recordings'
+        folder = (
+            os.path.normpath(folder_value)
+            if os.path.isabs(folder_value)
+            else os.path.join(str(project.folder), folder_value)
+        )
+        os.makedirs(folder, exist_ok=True)
+        stamp = __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')
+        codec_names = list(recorder.par.videocodec.menuNames)
+        use_h264 = 'h264' in codec_names
+        if use_h264:
+            recorder.par.videocodec = 'h264'
+        extension = '.mp4' if use_h264 else '.mov'
+        path = os.path.join(folder, 'Sonomika_{}{}'.format(stamp, extension))
+        recorder.par.file = path
+        try:
+            recorder.par.fps = float(project.cookRate)
+        except Exception:
+            pass
+        record_audio = bool(settings.par.Recordaudio.eval())
+        audio = r.op('audio_engine/out_record') if record_audio else None
+        device = r.op('audio_engine/audiodevin1') if record_audio else None
+        try:
+            audio_active = bool(settings.par.Audioactive.eval())
+            device_active = bool(device.par.active.eval())
+            device_ok = not bool(device.errors())
+            stream_ok = (
+                int(audio.numChans) > 0
+                and int(audio.numSamples) > 0
+                and float(audio.rate) >= 8000.0
+            )
+            if not (audio_active and device_active and device_ok and stream_ok):
+                audio = None
+        except Exception:
+            audio = None
+        recorder.par.audiochop = audio if audio is not None else ''
+        recorder.par.record = True
+        settings.par.Recordingstatus = (
+            'Recording with audio' if audio is not None else 'Recording video only')
+        print('Screen recording started -> {}'.format(path))
+        try:
+            _pin_settings_tab('Rec')
+        except Exception:
+            pass
+        return True
+    except Exception as exc:
+        try:
+            recorder.par.record = False
+            settings.par.Recordingstatus = 'Error'
+        except Exception:
+            pass
+        print('Recording failed: {}'.format(exc))
+        return False
+
+
 def _set_top_expr(top, expr):
     if top is None or not expr:
         return False

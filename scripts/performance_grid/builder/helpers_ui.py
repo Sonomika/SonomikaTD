@@ -720,7 +720,11 @@ def _ensure_reload_scripts_maintenance(settings):
         settings.par.Reloadscripts.label = 'Reload Scripts (Dev)'
     except Exception:
         pass
-    for name, index in (('Aboutbrand', 0), ('Aboutinfo', 1), ('Reloadscripts', 2)):
+    for name, index in (
+        ('Aboutbrand', 0),
+        ('Aboutinfo', 1),
+        ('Reloadscripts', 2),
+    ):
         try:
             getattr(settings.par, name).order = float(index)
         except Exception:
@@ -729,8 +733,12 @@ def _ensure_reload_scripts_maintenance(settings):
     if pe is not None:
         try:
             pars = str(pe.par.pars.eval()).split()
-            if 'Reloadscripts' not in pars:
-                pars.append('Reloadscripts')
+            for name in (
+                'Screenshotfolder', 'Takescreenshot', 'Recordingfolder',
+                'Recordaudio', 'Togglerecording', 'Reloadscripts',
+            ):
+                if name not in pars:
+                    pars.append(name)
             pe.par.pars = ' '.join(pars)
             pe.par.onpulse = True
             pe.par.active = True

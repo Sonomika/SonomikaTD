@@ -505,7 +505,13 @@ def onPulse(par):
     logic = _pm_logic()
     if logic is None:
         return
-    if name == 'Savecanvassize':
+    if name == 'Takescreenshot':
+        if hasattr(logic, 'take_program_screenshot'):
+            logic.take_program_screenshot()
+    elif name == 'Togglerecording':
+        if hasattr(logic, 'toggle_screen_recording'):
+            logic.toggle_screen_recording()
+    elif name == 'Savecanvassize':
         if hasattr(logic, 'save_canvas_size'):
             logic.save_canvas_size()
     elif name == 'Saveset':

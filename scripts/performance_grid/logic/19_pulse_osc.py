@@ -4,7 +4,7 @@ import random
 PULSE_SLOTS = 6
 PULSE_PAGE_ORDER = [
     'Canvas', 'Sets', 'OSC', SETTINGS_TAB_GRID_OSC, 'Pulse', 'Audio', 'Midi', 'Fade',
-    SETTINGS_TAB_PERF, 'About',
+    SETTINGS_TAB_PERF, 'Rec', 'About',
 ]
 PULSE_DIVISION_NAMES = ['1_32', '1_16', '1_8', '1_4', '1_2', '1bar', '2bar', '4bar', '8bar']
 PULSE_DIVISION_LABELS = [

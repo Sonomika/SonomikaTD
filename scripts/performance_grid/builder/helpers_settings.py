@@ -650,9 +650,102 @@ def _ensure_about_page(settings):
 
     _ensure_about_str('Aboutbrand', 'About', ABOUT_BRAND)
     _ensure_about_str('Aboutinfo', 'Information', ABOUT_INFO)
+    rec_page = None
+    for pg in settings.customPages:
+        if pg.name == 'Rec':
+            rec_page = pg
+            break
+    if rec_page is None:
+        rec_page = settings.appendCustomPage('Rec')
+    for name in (
+        'Screenshotfolder', 'Takescreenshot', 'Recordingfolder',
+        'Recordaudio', 'Togglerecording', 'Recordingstatus',
+    ):
+        try:
+            par = getattr(settings.par, name)
+            page_name = (
+                par.page.name if hasattr(par.page, 'name') else str(par.page))
+            if page_name != 'Rec':
+                par.destroy()
+        except Exception:
+            pass
+    try:
+        screenshot_folder = settings.par.Screenshotfolder
+    except AttributeError:
+        screenshot_folder = rec_page.appendStr(
+            'Screenshotfolder', label='Screenshot Folder')
+        screenshot_folder.default = 'screenshots'
+        screenshot_folder.val = 'screenshots'
+    try:
+        screenshot_folder.label = 'Screenshot Folder'
+        screenshot_folder.order = 0
+    except Exception:
+        pass
+    try:
+        screenshot = settings.par.Takescreenshot
+    except AttributeError:
+        screenshot = rec_page.appendPulse(
+            'Takescreenshot', label='Take Screenshot')
+    try:
+        screenshot.label = 'Take Screenshot'
+        screenshot.order = 1
+    except Exception:
+        pass
+    try:
+        recording_folder = settings.par.Recordingfolder
+    except AttributeError:
+        recording_folder = rec_page.appendStr(
+            'Recordingfolder', label='Recording Folder')
+        recording_folder.default = 'recordings'
+        recording_folder.val = 'recordings'
+    try:
+        recording_folder.label = 'Recording Folder'
+        recording_folder.order = 2
+    except Exception:
+        pass
+    try:
+        record_audio = settings.par.Recordaudio
+    except AttributeError:
+        record_audio = rec_page.appendToggle(
+            'Recordaudio', label='Record Audio')
+        record_audio.default = True
+        record_audio.val = True
+    try:
+        record_audio.label = 'Record Audio'
+        record_audio.order = 3
+    except Exception:
+        pass
+    try:
+        toggle_recording = settings.par.Togglerecording
+    except AttributeError:
+        toggle_recording = rec_page.appendPulse(
+            'Togglerecording', label='Start / Stop Screen Recording')
+    try:
+        toggle_recording.label = 'Start / Stop Screen Recording'
+        toggle_recording.order = 4
+    except Exception:
+        pass
+    try:
+        recording_status = settings.par.Recordingstatus
+    except AttributeError:
+        recording_status = rec_page.appendStr(
+            'Recordingstatus', label='Recording Status')
+    try:
+        recording_status.val = 'Stopped'
+        recording_status.readOnly = True
+        recording_status.order = 5
+    except Exception:
+        pass
     try:
         from performance_grid.builder.helpers_ui import _ensure_reload_scripts_maintenance
         _ensure_reload_scripts_maintenance(settings)
+    except Exception:
+        pass
+    try:
+        names = [pg.name for pg in settings.customPages]
+        desired = [name for name in names if name not in ('Rec', 'About')]
+        desired.extend(['Rec', 'About'])
+        settings.sortCustomPages(*desired)
     except Exception:
         pass
 
@@ -821,7 +914,9 @@ def _wire_settings_parexec(settings):
             + _pulse_parexec_slot_pars() + ' '
             'Audioactive Audiogain Audiodeviceindex Audiorefresh '
             'Audiothresholdlow Audiothresholdhigh Audiothresholdpeak '
-            'Newset Savefile Saveset Openfile Openset Reloadscripts'
+            'Newset Savefile Saveset Openfile Openset Takescreenshot '
+            'Screenshotfolder Recordingfolder Recordaudio Togglerecording '
+            'Reloadscripts'
         )
         parexec.par.valuechange = True
         parexec.par.onpulse = True
