@@ -620,6 +620,14 @@ def move_cell(from_layer, from_col, to_layer, to_col):
         moved_type=src_type,
         swapped=bool(dst_path),
     )
+    # Finalize force-reloads moved TOX shells. Restore custom parameter state
+    # afterwards so direct audio/pulse binds survive the new slot path.
+    if src_type == 'tox' and src_params:
+        _restore_cell_params(dst_layer, dst_col, src_type, src_params)
+        _schedule_cell_par_restore(dst_layer, dst_col, src_type, src_params)
+    if dst_path and dst_type == 'tox' and dst_params:
+        _restore_cell_params(from_layer, from_col, dst_type, dst_params)
+        _schedule_cell_par_restore(from_layer, from_col, dst_type, dst_params)
     return True
 
 

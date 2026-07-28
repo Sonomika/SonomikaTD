@@ -1087,7 +1087,11 @@ def _schedule_effect_resolution_repair(layer, col):
             return
         t = slot.op('tox')
         if t is not None:
+            _wire_upstream(slot, layer)
+            _wire_tox_chain_feed(slot, layer)
             _heal_effect_tox(t)
+            _sync_tox_canvas(t, layer, col)
+            _apply_tox_render_scale(t, layer, col)
         try:
             _wire_slot_cell_fx_chain(layer, col, slot)
         except Exception:
@@ -1930,6 +1934,11 @@ def _wire_tox(slot, path, layer=None, col=None, force_reload=False):
     if force_reload or not already:
         t.par.externaltox = load_path
         t.par.enableexternaltoxpulse.pulse()
+        if layer is not None:
+            # Feed video before the effect's first initialization cook. Particle
+            # shaders otherwise expose their red missing-texture fallback.
+            _wire_upstream(slot, layer)
+            _wire_tox_chain_feed(slot, layer)
         _heal_effect_tox(t, reload_external=True)
     else:
         _heal_effect_tox(t, reload_external=False)
@@ -2119,6 +2128,7 @@ def _pause_slot(slot, on=False, keep_tox_cooking=False, clip_type=None):
         _set_video_active(v, bool(on) and clip_type == 'video')
     t = slot.op('tox')
     if t is not None:
+        transport_paused = not global_transport_playing()
         force_logo_cooking = False
         if clip_type == 'tox' and _is_logo_overlay_tox(t):
             allow = True
@@ -2131,9 +2141,14 @@ def _pause_slot(slot, on=False, keep_tox_cooking=False, clip_type=None):
             allow = bool(on) or bool(keep_tox_cooking)
         else:
             allow = False
+        if clip_type == 'tox' and not force_logo_cooking:
+            _set_tox_animation_paused(t, transport_paused)
+            if transport_paused:
+                # Keep the shell/UI responsive; internal animation drivers are paused.
+                allow = True
         try:
             t.allowCooking = allow and (
-                force_logo_cooking or global_transport_playing() or bool(keep_tox_cooking)
+                force_logo_cooking or not transport_paused or bool(keep_tox_cooking)
             )
         except Exception:
             t.allowCooking = allow
@@ -2189,6 +2204,21 @@ def _tox_animation_pause_nodes(t):
         children = list(t.children)
     except Exception:
         children = []
+    # Common nested simulation drivers. Avoid a recursive findChildren() here:
+    # large particle networks can contain thousands of OPs and stall Perform.
+    for rel_path in (
+        'flowfields/particles1',
+        'flowfields/particles1/feedback1',
+        'flowfields/particles1/feedback2',
+        'flowfields/particles1/feedback3',
+        'flowfields/motion/pulse_chopexec',
+    ):
+        try:
+            child = t.op(rel_path)
+        except Exception:
+            child = None
+        if child is not None:
+            children.append(child)
     for child in children:
         optype = str(getattr(child, 'OPType', '')).lower()
         name = str(getattr(child, 'name', '')).lower()
@@ -2201,6 +2231,7 @@ def _tox_animation_pause_nodes(t):
             or 'feedback' in optype
             or name.endswith('_frame')
             or 'frame' in name
+            or name == 'particles1'
         )
         if is_driver:
             nodes.append(child)
@@ -2212,7 +2243,8 @@ def _set_tox_animation_paused(t, paused=True):
         return
     key = 'sonomika_animation_pause_state'
     if paused:
-        if t.fetch(key, None, search=False) is None:
+        existing = t.fetch(key, None, search=False)
+        if existing is None:
             state = []
             for node in _tox_animation_pause_nodes(t):
                 item = {'path': node.path}
@@ -2236,7 +2268,10 @@ def _set_tox_animation_paused(t, paused=True):
             except Exception:
                 pass
             optype = str(getattr(node, 'OPType', '')).lower()
-            if 'feedback' in optype or 'timer' in optype or 'lfo' in optype or 'noise' in optype:
+            if (
+                'feedback' in optype or 'timer' in optype or 'lfo' in optype
+                or 'noise' in optype or str(getattr(node, 'name', '')).lower() == 'particles1'
+            ):
                 try:
                     node.allowCooking = False
                 except Exception:
