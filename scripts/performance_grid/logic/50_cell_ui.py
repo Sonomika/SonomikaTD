@@ -30,7 +30,7 @@ def _apply_grid_font(txt):
         pass
 
 
-def _style_name_bar(txt, w, text='', highlight=False):
+def _style_name_bar(txt, w, text='', highlight=False, missing=False):
     try:
         txt.par.text.mode = ParMode.CONSTANT
     except Exception:
@@ -53,7 +53,6 @@ def _style_name_bar(txt, w, text='', highlight=False):
         txt.par.textoffsetx = 4
     except Exception:
         pass
-    missing = str(label).strip().lower() == 'missing'
     if missing:
         txt.par.fontcolorr, txt.par.fontcolorg, txt.par.fontcolorb = (0.95, 0.45, 0.35)
     elif highlight:
@@ -70,7 +69,23 @@ def _style_name_bar(txt, w, text='', highlight=False):
 FREEZE_BADGE_W = 18
 
 
-def _style_freeze_badge(txt):
+def _cell_missing(layer, col):
+    """Missing status wins over freeze, including legacy rows labelled missing."""
+    try:
+        clip_type, path = _cell_content(layer, col)
+        if bool(path) and _asset_file_missing(path, clip_type):
+            return True
+    except Exception:
+        pass
+    try:
+        tbl = _table()
+        idx = _find(tbl, int(layer), int(col)) if tbl is not None else None
+        return idx is not None and str(tbl[idx, 'label']).strip().lower() == 'missing'
+    except Exception:
+        return False
+
+
+def _style_freeze_badge(txt, missing=False):
     if txt is None:
         return
     try:
@@ -78,7 +93,7 @@ def _style_freeze_badge(txt):
     except Exception:
         pass
     try:
-        txt.par.text = 'F'
+        txt.par.text = '!' if missing else 'F'
         txt.par.resolutionw = FREEZE_BADGE_W
         txt.par.resolutionh = CELL_LABEL_H
         txt.par.font = TD_FONT
@@ -90,12 +105,15 @@ def _style_freeze_badge(txt):
         txt.par.aligny = 'center'
         txt.par.bgalpha = 1.0
         txt.par.fontcolorr, txt.par.fontcolorg, txt.par.fontcolorb = (1.0, 1.0, 1.0)
-        txt.par.bgcolorr, txt.par.bgcolorg, txt.par.bgcolorb = (0.0, 0.0, 0.0)
+        if missing:
+            txt.par.bgcolorr, txt.par.bgcolorg, txt.par.bgcolorb = (0.75, 0.12, 0.08)
+        else:
+            txt.par.bgcolorr, txt.par.bgcolorg, txt.par.bgcolorb = (0.0, 0.0, 0.0)
     except Exception:
         pass
 
 
-def _ensure_freeze_badge(cell):
+def _ensure_freeze_badge(cell, missing=False):
     if cell is None:
         return None
     badge = cell.op('freeze_badge')
@@ -116,7 +134,7 @@ def _ensure_freeze_badge(cell):
     txt = badge.op('badge_text')
     if txt is None:
         txt = badge.create('textTOP', 'badge_text')
-    _style_freeze_badge(txt)
+    _style_freeze_badge(txt, missing=missing)
     try:
         badge.par.top = txt
         badge.par.topfill = 'fill'
@@ -126,7 +144,13 @@ def _ensure_freeze_badge(cell):
 
 
 def _layout_freeze_badge(cell, layer=None, col=None, pad=0):
-    badge = _ensure_freeze_badge(cell)
+    missing = False
+    if layer is not None and col is not None:
+        try:
+            missing = _cell_missing(layer, col)
+        except Exception:
+            pass
+    badge = _ensure_freeze_badge(cell, missing=missing)
     if badge is None:
         return
     w, _h = _cell_dims(cell)
@@ -138,7 +162,7 @@ def _layout_freeze_badge(cell, layer=None, col=None, pad=0):
         badge.par.w = FREEZE_BADGE_W
         badge.par.h = CELL_LABEL_H
         if layer is not None and col is not None:
-            badge.par.display = bool(_cell_frozen(layer, col))
+            badge.par.display = missing or bool(_cell_frozen(layer, col))
     except Exception:
         pass
 
@@ -612,6 +636,7 @@ def _refresh_cell_display(layer, col, force_video_prime=False):
         inner_w = max(32, w - pad * 2)
         _style_name_bar(
             label, inner_w, _cell_display_name(layer, col), highlight=selected,
+            missing=_cell_missing(layer, col),
         )
     _layout_freeze_badge(cell, layer, col)
     _sync_cell_label_row(layer, col)
@@ -632,6 +657,7 @@ def _refresh_cell_selection_display(layer, col):
         return
     _, _, _, label = _ensure_cell_layout(cell)
     selected = _is_composition_cell(layer, col)
+    clip_type, path = _cell_content(layer, col)
     if label is not None:
         w = int(float(cell.par.w.eval())) or CELL_W
         _style_name_bar(
@@ -639,6 +665,7 @@ def _refresh_cell_selection_display(layer, col):
             max(32, w),
             _cell_display_name(layer, col),
             highlight=selected,
+            missing=_cell_missing(layer, col),
         )
     try:
         active_col = int(float(r.par.Activecolumn.eval()))
@@ -750,6 +777,7 @@ def _refresh_ui(cols=None, full=False):
                 inner_w = max(32, w - pad * 2)
                 _style_name_bar(
                     label, inner_w, _cell_display_name(layer, col), highlight=selected,
+                    missing=_cell_missing(layer, col),
                 )
             _layout_freeze_badge(cell, layer, col)
             _sync_cell_label_row(layer, col)

@@ -1371,14 +1371,46 @@ def _apply_grid_osc_action_immediate(col, layers, pairs):
     try:
         if _grid_osc_is_simple_shared(col, layers, pairs):
             composition_select_column(col)
-        elif pairs:
-            for layer, pair_col in pairs:
-                composition_assign_layer_cell(layer, pair_col, toggle=False)
-        elif layers:
-            for layer in layers:
-                composition_assign_layer_cell(layer, col, toggle=False)
         else:
-            composition_select_column(col)
+            assignments = (
+                [(int(layer), int(pair_col)) for layer, pair_col in pairs]
+                if pairs else
+                [(int(layer), int(col)) for layer in layers]
+            )
+            if not assignments:
+                composition_select_column(col)
+                return True
+
+            # A compound GrdOSC address is one composition change. Starting a
+            # separate layer fade for every pair overwrites the shared fade
+            # state and can crash TouchDesigner. Apply all assignments inside
+            # one composition crossfade instead.
+            def _apply_batch():
+                r = _root()
+                focus_layer, focus_col = assignments[-1]
+                if r is not None:
+                    try:
+                        r.par.Activelayer = focus_layer
+                        r.par.Selectedlayer = focus_layer
+                        r.par.Selectedcol = focus_col
+                    except Exception:
+                        pass
+                for assign_layer, assign_col in assignments:
+                    _set_layer_src_col(assign_layer, assign_col)
+                _rebuild_composition()
+                try:
+                    _refresh_ui(cols={assign_col for _layer, assign_col in assignments})
+                except Exception:
+                    pass
+
+            changed = any(
+                int(_get_layer_src_col(assign_layer)) != int(assign_col)
+                for assign_layer, assign_col in assignments
+            )
+            if changed and _column_xfade_enabled() and _xfade_allowed():
+                _begin_composition_xfade(_apply_batch)
+            else:
+                _apply_batch()
         return True
     finally:
         _GRID_OSC_ROUTING = False
@@ -1407,7 +1439,7 @@ def _defer_grid_osc_ui_refresh(layer=None, col=None):
 
 
 def _defer_grid_osc_action(col, layers, pairs, address):
-    """Leave oscin callback immediately; apply routing same frame, UI next frame."""
+    """Queue latest OSC routing outside callbacks and serialize it with fades."""
     global _GRID_OSC_DEFER_ARMED, _GRID_OSC_DEFER_PAYLOAD
     _GRID_OSC_DEFER_PAYLOAD = (col, layers, pairs, str(address or ''))
     if _GRID_OSC_DEFER_ARMED:
@@ -1416,8 +1448,18 @@ def _defer_grid_osc_action(col, layers, pairs, address):
 
     def _run():
         global _GRID_OSC_DEFER_ARMED, _GRID_OSC_DEFER_PAYLOAD
-        _GRID_OSC_DEFER_ARMED = False
+        # Never mutate composition routing from a new OSC action while the
+        # previous cell/column fade owns the crossfade nodes. Incoming OSC
+        # messages keep replacing the payload, so only the latest target runs.
+        try:
+            fade_active = bool(_COLUMN_XFADE.get('active'))
+        except Exception:
+            fade_active = False
+        if fade_active:
+            if _defer_run(_run, delayFrames=2, fromOP=_root()):
+                return
         pending = _GRID_OSC_DEFER_PAYLOAD
+        _GRID_OSC_DEFER_ARMED = False
         _GRID_OSC_DEFER_PAYLOAD = None
         if not pending:
             return
@@ -1435,7 +1477,8 @@ def _defer_grid_osc_action(col, layers, pairs, address):
         except Exception as exc:
             print('Grid OSC action failed:', action_address, exc)
 
-    if _defer_run(_run, delayFrames=0):
+    # delayFrames=1 guarantees the OSC In DAT callback has returned.
+    if _defer_run(_run, delayFrames=1, fromOP=_root()):
         return True
     _GRID_OSC_DEFER_ARMED = False
     _GRID_OSC_DEFER_PAYLOAD = None

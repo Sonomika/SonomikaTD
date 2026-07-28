@@ -1752,6 +1752,10 @@ def trigger_cell(layer, col):
     def _apply_fade():
         cell_change_log('trigger_cell.xfade_apply')
         _set_layer_src_col(layer, col)
+        # Pending fades apply after the click-time UI refresh. Repaint both
+        # cells now that the live composition has actually moved.
+        _refresh_cell_selection_display(layer, from_col)
+        _refresh_cell_selection_display(layer, col)
 
     def _apply_direct():
         cell_change_log('trigger_cell.direct_apply')

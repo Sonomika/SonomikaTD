@@ -265,6 +265,12 @@ def composition_select_column(col, previous_col=None):
         for layer in range(1, _num_layers() + 1):
             _set_layer_src_col(layer, col)
         _rebuild_composition()
+        # The fade starter is deferred until incoming media is ready. Refresh
+        # after applying the new composition so every row ring moves together.
+        try:
+            _refresh_ui(cols=(prev_col, col))
+        except Exception:
+            pass
     if _column_xfade_enabled() and _xfade_allowed():
         _schedule_column_xfade_when_ready(col, prev_col, _apply)
     else:
@@ -553,8 +559,6 @@ def _live_cell_display_name(layer, col, clip_type):
 
 def _clip_display_name(clip_type, path):
     """Short name stored in clip_matrix label column."""
-    if path and _asset_file_missing(path, clip_type):
-        return 'missing'
     name = _file_display_name(path, clip_type)
     return name[:40] if name else chr(183)
 
@@ -566,7 +570,8 @@ def _cell_display_name(layer, col):
     if not path:
         return chr(183)
     if _asset_file_missing(path, ctype):
-        return 'missing'
+        name = _file_display_name(path, ctype)
+        return name[:40] if name else 'missing'
     name = _matrix_cell_label(layer, col)
     if _is_bad_display_name(name):
         name = _file_display_name(path, ctype)

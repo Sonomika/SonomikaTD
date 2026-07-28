@@ -32,7 +32,7 @@ Right-click a loaded cell to open the cell menu:
 - **Render Scale** / **Freeze** — performance controls for that cell.
 - **Copy** / **Cut** / **Paste** / **Delete** — clipboard and clear.
 
-If a cell still points at a file that is no longer on disk, the name strip under the thumbnail shows **missing** in red. Use **Relink** to point it at the new location, or re-open a performance set that still has saved parameter state for that cell.
+If a cell still points at a file that is no longer on disk, the name strip under the thumbnail shows the missing file's name in red with a red **!** badge. Use **Relink** to point it at the new location, or re-open a performance set that still has saved parameter state for that cell.
 
 ## Rows And Columns
 

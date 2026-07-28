@@ -1,5 +1,6 @@
 AUTO_REPAIR = r'''# Heal FX feeds periodically; never reload builder or onInit here (preserves grid).
 _repair_tick = 0
+_audio_startup_passes = {6, 30}
 
 def onStart():
     # Intentionally empty: reloading builder or running onInit here resets grid/playback.
@@ -28,6 +29,15 @@ def onFrameStart(frame):
     except Exception:
         pass
     _repair_tick += 1
+    # Project settings and the audio device settle after onStart. Enforce only
+    # the spectrum display state; do not rebuild the analysis/trigger chain.
+    if _repair_tick in _audio_startup_passes or _repair_tick % 45 == 0:
+        try:
+            parent().op('logic').module._enforce_audio_spectrum_runtime(
+                refresh_visuals=(_repair_tick in _audio_startup_passes)
+            )
+        except Exception as exc:
+            print('Audio startup configuration:', exc)
     if _repair_tick % 45 != 0:
         return
     try:

@@ -18,6 +18,7 @@ _AUDIO_MONITOR_OPEN = True
 DEFAULT_AUDIO_MONITOR = True
 _AUDIO_PAGE_PRESERVE_IDX = None
 _AUDIO_PAGE_PRESERVE_UNTIL = 0.0
+_AUDIO_ACTIVATE_TOKEN = 0
 # Low: left ~0–46%, threshold near upper third. High: right ~52–96%, threshold near lower third.
 DEFAULT_BASS_POS = 0.23
 DEFAULT_BASS_WIDTH = 0.46
@@ -342,13 +343,54 @@ def _begin_audio_active_tab_hold(seconds=0.45):
 
 
 def on_audio_active_changed():
+    global _AUDIO_ACTIVATE_TOKEN
+    _AUDIO_ACTIVATE_TOKEN += 1
+    activate_token = int(_AUDIO_ACTIVATE_TOKEN)
     """Audio Active: live vs grey only — never rebuild/reflow the settings panel."""
     try:
         _sync_audio_active()
     except Exception:
         pass
+    # Enabling a saved parameter does not always reopen the native capture
+    # endpoint. Match the device restart performed by Refresh Audio Input.
+    if _audio_active():
+        try:
+            _ensure_audio_engine()
+            _refresh_audio_device_menu(force=True)
+            _apply_audio_device()
+            _restart_audio_device_input()
+            eng = _audio_engine()
+            if eng is not None:
+                _heal_audio_output_chain(eng)
+                eng.cook(force=True)
+                _heal_audio_spectrum_if_needed(eng)
+            _sync_audio_output_pars()
+        except Exception as exc:
+            print('Audio activate restart:', exc)
+        # On project reopen the Windows capture endpoint may not be ready
+        # during this callback. Retry once after the project has settled.
+        def _delayed_audio_activate():
+            if activate_token != int(_AUDIO_ACTIVATE_TOKEN) or not _audio_active():
+                return
+            try:
+                refresh_audio_input()
+                _enforce_audio_spectrum_runtime(refresh_visuals=True)
+            except Exception as exc:
+                print('Delayed audio activate restart:', exc)
+        try:
+            if not _defer_run(_delayed_audio_activate, delayFrames=30, fromOP=_root()):
+                _delayed_audio_activate()
+        except Exception:
+            pass
     # force=False: if the Audio slot is already open, only restyle (no height/page churn).
     _sync_audio_spectrum_for_settings_tab(force=False)
+    # Active-off clears audio_band_view.top. The cached display binding still
+    # matches when Active comes back on, so a normal sync will not restore it.
+    if _audio_active():
+        try:
+            _enforce_audio_spectrum_runtime(refresh_visuals=True)
+        except Exception:
+            pass
 
 
 def on_audio_monitor_changed():
@@ -1973,14 +2015,50 @@ def _configure_audio_spectrum_chop(spect):
     if spect is None:
         return
     try:
+        # Visual mode spans the full range to Nyquist. Keep the established
+        # 1024 FFT so existing Low/High trigger thresholds retain their scale.
         spect.par.mode = 'visual'
         spect.par.fftsize = '1024'
         spect.par.frequencylog = True
+        spect.par.highfreqboost = 0.75
         spect.par.outputmenu = 'setmanually'
         spect.par.outlength = AUDIO_HIST_BINS
         spect.par.timeslice = False
     except Exception:
         pass
+
+
+def _enforce_audio_spectrum_runtime(refresh_visuals=False):
+    """Restore the full-range display without rebuilding the trigger chain."""
+    eng = _audio_engine()
+    if eng is None:
+        return False
+    spect = eng.op('audiospect1')
+    gain = eng.op('gain1')
+    if spect is None or gain is None:
+        return False
+    _configure_audio_spectrum_chop(spect)
+    if _chop_input_owner(spect) is not gain:
+        _wire_chop(gain, spect)
+    # The histogram must read the complete Audio Spectrum channel, not a stale
+    # channel name retained from an earlier audio device.
+    sel = eng.op('spect_bar_sel')
+    if sel is not None:
+        try:
+            channels = list(spect.chans())
+            sel.par.channames = channels[0].name if channels else 'chan1'
+        except Exception:
+            pass
+    if refresh_visuals:
+        try:
+            root_comp = _root()
+            strip = root_comp.op('ui/audio_band_strip') if root_comp is not None else None
+            view = strip.op('audio_band_view') if strip is not None else None
+            if view is not None:
+                _sync_spectrogram_display(view, force=True)
+        except Exception:
+            pass
+    return True
 
 
 def _rebuild_audio_spectrum_chain(eng):
@@ -5769,8 +5847,11 @@ def _audio_new_set_defaults():
         ('Audiodeviceindex', '0'),
         ('Audiogain', DEFAULT_AUDIO_GAIN),
         ('Audiothresholdlow', DEFAULT_THRESH_LOW),
+        ('Audioreverselow', False),
         ('Audiothresholdhigh', DEFAULT_THRESH_HIGH),
+        ('Audioreversehigh', False),
         ('Audiothresholdpeak', DEFAULT_THRESH_PEAK),
+        ('Audioreversepeak', False),
     )
 
 

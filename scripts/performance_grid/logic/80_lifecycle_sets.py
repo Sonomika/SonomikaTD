@@ -386,7 +386,7 @@ def heal_fade_tab(settings=None):
 
 
 def reset_fade_defaults_for_new_set():
-    """New set: Fade off; Cells + Column crossfade toggles on."""
+    """New set: Fade off; Cells and Column crossfade options ready."""
     settings = _settings()
     if settings is None:
         return False
@@ -408,6 +408,116 @@ def reset_fade_defaults_for_new_set():
         return _reset(settings)
     except Exception:
         return False
+
+
+_NEW_SET_TAB_DEFAULTS_KEY = 'new_set_all_tabs_defaults'
+_NEW_SET_DEFAULT_PAGES = {
+    'Canvas', 'OSC', 'GrdOSC', 'Pulse', 'Audio', 'Midi', 'Fade', 'Perf',
+}
+_NEW_SET_DYNAMIC_PARS = {
+    'Midireceived', 'OscLastaddress', 'Gridosclastaddress',
+}
+
+
+def _new_set_par_is_dynamic(name):
+    name = str(name)
+    low = name.lower()
+    if low in {item.lower() for item in _NEW_SET_DYNAMIC_PARS}:
+        return True
+    if low.startswith('audioout'):
+        return True
+    if low.startswith('osc') and low.endswith('value'):
+        return True
+    if low.startswith('pulse') and low.endswith('value'):
+        return True
+    return False
+
+
+def capture_new_set_tab_defaults(settings=None):
+    """Capture current editable values across all functional Settings tabs."""
+    settings = settings or _settings()
+    if settings is None:
+        return 0
+    snapshot = {}
+    for page in settings.customPages:
+        if str(page.name) not in _NEW_SET_DEFAULT_PAGES:
+            continue
+        for par in page.pars:
+            if _new_set_par_is_dynamic(par.name):
+                continue
+            try:
+                if str(par.mode) != str(ParMode.CONSTANT):
+                    continue
+                if 'pulse' in str(par.style).lower():
+                    continue
+                if bool(par.readOnly):
+                    continue
+            except Exception:
+                pass
+            try:
+                snapshot[str(par.name)] = par.eval()
+            except Exception:
+                pass
+    try:
+        settings.store(_NEW_SET_TAB_DEFAULTS_KEY, snapshot, search=False)
+    except Exception:
+        return 0
+    return len(snapshot)
+
+
+def apply_new_set_tab_defaults(settings=None):
+    """Apply the saved all-tab snapshot after legacy New Set resets."""
+    settings = settings or _settings()
+    if settings is None:
+        return 0
+    try:
+        snapshot = settings.fetch(_NEW_SET_TAB_DEFAULTS_KEY, {}, search=False)
+    except Exception:
+        snapshot = {}
+    if not isinstance(snapshot, dict) or not snapshot:
+        return 0
+    applied = 0
+    parexec = settings.op('settings_parexec') or settings.op('parexec')
+    parexec_was_active = None
+    try:
+        if parexec is not None:
+            parexec_was_active = bool(parexec.par.active.eval())
+            parexec.par.active = False
+        for name, value in snapshot.items():
+            if _new_set_par_is_dynamic(name):
+                continue
+            try:
+                par = getattr(settings.par, str(name))
+                if str(par.mode) != str(ParMode.CONSTANT):
+                    continue
+                if 'pulse' in str(par.style).lower():
+                    continue
+                par.default = value
+                if par.eval() != value:
+                    par.val = value
+                    applied += 1
+            except Exception:
+                pass
+    finally:
+        if parexec is not None and parexec_was_active is not None:
+            try:
+                parexec.par.active = parexec_was_active
+            except Exception:
+                pass
+    callbacks = (
+        lambda: apply_canvas_size(),
+        lambda: configure_osc_input(),
+        lambda: configure_midi_input(),
+        lambda: configure_pulse_engine(reset_sync=True),
+        lambda: (_sync_audio_active(), _apply_audio_device()),
+    )
+    for index, callback in enumerate(callbacks, start=1):
+        try:
+            if not _defer_run(callback, delayFrames=index * 2, fromOP=_root()):
+                callback()
+        except Exception:
+            pass
+    return applied
 
 
 def onInit(full=True):
@@ -1040,11 +1150,17 @@ def new_performance_set(set_name=None):
     except Exception:
         pass
     try:
-        reset_fade_defaults_for_new_set()
+        reset_midi_defaults_for_new_set()
     except Exception:
         pass
     try:
-        reset_midi_defaults_for_new_set()
+        apply_new_set_tab_defaults()
+    except Exception:
+        pass
+    # Fade is the one forced New Set default. Apply it after the saved
+    # all-tab snapshot so a previously captured Fade=On value cannot win.
+    try:
+        reset_fade_defaults_for_new_set()
     except Exception:
         pass
     tbl_comp = _comp_table()
@@ -1391,14 +1507,11 @@ def load_performance_set(path=None):
                 tbl = _table()
                 idx = _find(tbl, layer, col, scene=scene)
                 if idx is not None:
-                    if _asset_file_missing(fpath, ctype):
-                        tbl[idx, 'label'] = 'missing'
-                    else:
-                        label = str(row.get('label', '')).strip()
-                        if _is_bad_display_name(label):
-                            label = _file_display_name(fpath, ctype)
-                        if not _is_bad_display_name(label):
-                            tbl[idx, 'label'] = label
+                    label = str(row.get('label', '')).strip()
+                    if _is_bad_display_name(label):
+                        label = _file_display_name(fpath, ctype)
+                    if not _is_bad_display_name(label):
+                        tbl[idx, 'label'] = label
             except Exception:
                 pass
             if scene == active_scene:
