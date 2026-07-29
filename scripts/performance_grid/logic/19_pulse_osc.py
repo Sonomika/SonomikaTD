@@ -293,8 +293,6 @@ def _pulse_page_par_order():
             p['division'],
             p['skip'],
             p['lfo'],
-            p['kick'],
-            p['peak'],
             p['min'],
             p['max'],
             p['value'],
@@ -320,10 +318,11 @@ def _destroy_legacy_pulse_pars(s):
         except Exception:
             pass
     for slot in range(1, PULSE_SLOTS + 1):
-        try:
-            getattr(s.par, 'Pulse{}address'.format(slot)).destroy()
-        except Exception:
-            pass
+        for suffix in ('address', 'kick', 'peak'):
+            try:
+                getattr(s.par, 'Pulse{}{}'.format(slot, suffix)).destroy()
+            except Exception:
+                pass
 
 
 def _ensure_pulse_tab_pars():
@@ -401,8 +400,6 @@ def _ensure_pulse_tab_pars():
             100.0,
         )
         _ensure_toggle(p['lfo'], '{} LFO'.format(slot), PULSE_DEFAULT_LFO)
-        _ensure_toggle(p['kick'], '{} Audio Kick'.format(slot), False)
-        _ensure_toggle(p['peak'], '{} Audio Peak'.format(slot), False)
         _ensure_float(
             p['min'],
             '{} Min'.format(slot),

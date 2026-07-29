@@ -448,6 +448,10 @@ def _snapshot_cell_params(layer, col, clip_type=None):
     for par in _copyable_cell_params(target, clip_type):
         rec = {'name': par.name}
         try:
+            mode_name = str(getattr(par.mode, 'name', par.mode)).upper()
+        except Exception:
+            mode_name = ''
+        try:
             rec['val'] = par.eval()
         except Exception:
             try:
@@ -456,13 +460,13 @@ def _snapshot_cell_params(layer, col, clip_type=None):
                 pass
         try:
             expr = str(par.expr or '').strip()
-            if expr:
+            if expr and mode_name in ('EXPRESSION', 'EXPRESS'):
                 rec['expr'] = expr
         except Exception:
             pass
         try:
             bind_expr = str(par.bindExpr or '').strip()
-            if bind_expr:
+            if bind_expr and mode_name == 'BIND':
                 rec['bindExpr'] = bind_expr
         except Exception:
             pass

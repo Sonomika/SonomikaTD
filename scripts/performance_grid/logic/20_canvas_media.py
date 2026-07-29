@@ -1683,6 +1683,12 @@ def _slot_tox_path(slot):
         return ''
 
 
+def _slot_tox_root_pause_safe(slot):
+    """Some feedback simulations respawn when their root COMP cooking is toggled."""
+    path = _slot_tox_path(slot).replace('\\', '/').lower()
+    return not path.endswith('/particle_video_emit.tox')
+
+
 def _tox_cook_mode():
     s = _settings()
     try:
@@ -2119,6 +2125,50 @@ def _wire_tox_pick(slot):
         pick.par.index = 2
 
 
+def _set_slot_tox_transport_frozen(slot, frozen=True):
+    """Hold the final TOX frame so disabling its COMP cannot flicker downstream."""
+    if slot is None:
+        return
+    key = 'sonomika_transport_tox_locked'
+    source = slot.op('tox_fit')
+    if frozen:
+        try:
+            if slot.fetch(key, False, search=False):
+                return
+        except Exception:
+            pass
+        if source is not None:
+            try:
+                source.lock = False
+                source.allowCooking = True
+                source.cook(force=True)
+                source.lock = True
+                source.allowCooking = False
+            except Exception:
+                pass
+        try:
+            slot.store(key, True, search=False)
+        except Exception:
+            pass
+    else:
+        try:
+            locked = bool(slot.fetch(key, False, search=False))
+        except Exception:
+            locked = False
+        if not locked:
+            return
+        if source is not None:
+            try:
+                source.lock = False
+                source.allowCooking = True
+            except Exception:
+                pass
+        try:
+            slot.unstore(key)
+        except Exception:
+            pass
+
+
 def _pause_slot(slot, on=False, keep_tox_cooking=False, clip_type=None):
     if slot is None:
         return
@@ -2129,6 +2179,8 @@ def _pause_slot(slot, on=False, keep_tox_cooking=False, clip_type=None):
     t = slot.op('tox')
     if t is not None:
         transport_paused = not global_transport_playing()
+        if clip_type == 'tox' and not transport_paused:
+            _set_slot_tox_transport_frozen(slot, False)
         force_logo_cooking = False
         if clip_type == 'tox' and _is_logo_overlay_tox(t):
             allow = True
@@ -2142,10 +2194,30 @@ def _pause_slot(slot, on=False, keep_tox_cooking=False, clip_type=None):
         else:
             allow = False
         if clip_type == 'tox' and not force_logo_cooking:
-            _set_tox_animation_paused(t, transport_paused)
             if transport_paused:
-                # Keep the shell/UI responsive; internal animation drivers are paused.
-                allow = True
+                # Freeze the complete TOX tree. Effects can animate through arbitrary
+                # nested operators, so pausing a list of known drivers is incomplete.
+                _set_slot_tox_transport_frozen(slot, True)
+                if not _slot_tox_root_pause_safe(slot):
+                    # The locked output removes cook demand without toggling the
+                    # feedback simulation's root, preserving all particle state.
+                    return
+                _set_tox_animation_paused(t, True)
+                try:
+                    t.allowCooking = False
+                except Exception:
+                    pass
+                return
+            _set_tox_animation_paused(t, False)
+        elif clip_type == 'tox' and force_logo_cooking and transport_paused:
+            # Global transport pause must also freeze overlay/logo TOXs.
+            _set_slot_tox_transport_frozen(slot, True)
+            _set_tox_animation_paused(t, True)
+            try:
+                t.allowCooking = False
+            except Exception:
+                pass
+            return
         try:
             t.allowCooking = allow and (
                 force_logo_cooking or not transport_paused or bool(keep_tox_cooking)
@@ -2197,45 +2269,9 @@ def _slot_freeze_index(slot, clip_type=None):
 
 
 def _tox_animation_pause_nodes(t):
-    if t is None:
-        return []
-    nodes = []
-    try:
-        children = list(t.children)
-    except Exception:
-        children = []
-    # Common nested simulation drivers. Avoid a recursive findChildren() here:
-    # large particle networks can contain thousands of OPs and stall Perform.
-    for rel_path in (
-        'flowfields/particles1',
-        'flowfields/particles1/feedback1',
-        'flowfields/particles1/feedback2',
-        'flowfields/particles1/feedback3',
-        'flowfields/motion/pulse_chopexec',
-    ):
-        try:
-            child = t.op(rel_path)
-        except Exception:
-            child = None
-        if child is not None:
-            children.append(child)
-    for child in children:
-        optype = str(getattr(child, 'OPType', '')).lower()
-        name = str(getattr(child, 'name', '')).lower()
-        is_driver = (
-            optype in ('executedat', 'chopexecutedat')
-            or 'execute' in optype
-            or 'timer' in optype
-            or 'lfo' in optype
-            or 'noise' in optype
-            or 'feedback' in optype
-            or name.endswith('_frame')
-            or 'frame' in name
-            or name == 'particles1'
-        )
-        if is_driver:
-            nodes.append(child)
-    return nodes
+    # The complete TOX root is frozen now. Do not toggle internal simulation
+    # operators: feedback and particle components can reset when cooking resumes.
+    return []
 
 
 def _set_tox_animation_paused(t, paused=True):
@@ -2277,7 +2313,7 @@ def _set_tox_animation_paused(t, paused=True):
                 except Exception:
                     pass
         try:
-            t.allowCooking = True
+            t.allowCooking = False
         except Exception:
             pass
     else:

@@ -33,8 +33,6 @@ def _pulse_parexec_slot_pars():
             'Pulse{}division'.format(slot),
             'Pulse{}skip'.format(slot),
             'Pulse{}lfo'.format(slot),
-            'Pulse{}kick'.format(slot),
-            'Pulse{}peak'.format(slot),
             'Pulse{}min'.format(slot),
             'Pulse{}max'.format(slot),
         ])
@@ -586,7 +584,7 @@ def reset_fade_defaults_for_new_set(settings=None):
 
 
 def _audio_page_par_order():
-    return [
+    names = [
         'Audiodeviceindex',
         'Audiorefresh',
         'Audioactive',
@@ -604,6 +602,7 @@ def _audio_page_par_order():
         'Audioouthigh',
         'Audiooutpeak',
     ]
+    return names
 
 
 def _ensure_about_page(settings):
