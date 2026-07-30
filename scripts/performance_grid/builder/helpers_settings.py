@@ -658,7 +658,7 @@ def _ensure_about_page(settings):
         rec_page = settings.appendCustomPage('Rec')
     for name in (
         'Screenshotfolder', 'Takescreenshot', 'Recordingfolder',
-        'Recordaudio', 'Togglerecording', 'Recordingstatus',
+        'Recordingquality', 'Recordaudio', 'Togglerecording', 'Recordingstatus',
     ):
         try:
             par = getattr(settings.par, name)
@@ -703,6 +703,21 @@ def _ensure_about_page(settings):
     except Exception:
         pass
     try:
+        recording_quality = settings.par.Recordingquality
+    except AttributeError:
+        recording_quality = rec_page.appendFloat(
+            'Recordingquality', label='Recording Quality')
+        recording_quality.default = 0.75
+        recording_quality.val = 0.75
+        recording_quality.min = recording_quality.normMin = 0.0
+        recording_quality.max = recording_quality.normMax = 1.0
+        recording_quality.clampMin = recording_quality.clampMax = True
+    try:
+        recording_quality.label = 'Recording Quality'
+        recording_quality.order = 3
+    except Exception:
+        pass
+    try:
         record_audio = settings.par.Recordaudio
     except AttributeError:
         record_audio = rec_page.appendToggle(
@@ -711,7 +726,7 @@ def _ensure_about_page(settings):
         record_audio.val = True
     try:
         record_audio.label = 'Record Audio'
-        record_audio.order = 3
+        record_audio.order = 4
     except Exception:
         pass
     try:
@@ -721,7 +736,7 @@ def _ensure_about_page(settings):
             'Togglerecording', label='Start / Stop Screen Recording')
     try:
         toggle_recording.label = 'Start / Stop Screen Recording'
-        toggle_recording.order = 4
+        toggle_recording.order = 5
     except Exception:
         pass
     try:
@@ -732,7 +747,7 @@ def _ensure_about_page(settings):
     try:
         recording_status.val = 'Stopped'
         recording_status.readOnly = True
-        recording_status.order = 5
+        recording_status.order = 6
     except Exception:
         pass
     try:
@@ -914,7 +929,7 @@ def _wire_settings_parexec(settings):
             'Audioactive Audiogain Audiodeviceindex Audiorefresh '
             'Audiothresholdlow Audiothresholdhigh Audiothresholdpeak '
             'Newset Savefile Saveset Openfile Openset Takescreenshot '
-            'Screenshotfolder Recordingfolder Recordaudio Togglerecording '
+            'Screenshotfolder Recordingfolder Recordingquality Recordaudio Togglerecording '
             'Reloadscripts'
         )
         parexec.par.valuechange = True

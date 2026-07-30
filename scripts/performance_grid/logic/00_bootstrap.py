@@ -120,6 +120,54 @@ def toggle_screen_recording():
         use_h264 = 'h264' in codec_names
         if use_h264:
             recorder.par.videocodec = 'h264'
+        try:
+            quality = max(0.0, min(1.0, float(
+                settings.par.Recordingquality.eval())))
+        except Exception:
+            quality = 0.75
+        # Dense particle motion needs far more bitrate than the Movie File Out
+        # default. Scale a 12–100 Mbps 1080p target by output pixel count.
+        try:
+            pixels = max(1, int(source.width) * int(source.height))
+        except Exception:
+            pixels = 1920 * 1080
+        resolution_scale = max(0.5, float(pixels) / float(1920 * 1080))
+        avg_kbps = min(
+            240000.0,
+            (12000.0 + quality * quality * 88000.0) * resolution_scale)
+        peak_kbps = min(300000.0, avg_kbps * 1.25)
+        try:
+            recorder.par.qualityscale = quality
+        except Exception:
+            pass
+        try:
+            modes = list(recorder.par.qualitymode.menuNames)
+            wanted = (
+                'high' if quality >= 0.38
+                else 'balanced')
+            if wanted in modes:
+                recorder.par.qualitymode = wanted
+        except Exception:
+            pass
+        try:
+            profiles = list(recorder.par.profile.menuNames)
+            if 'high' in profiles:
+                recorder.par.profile = 'high'
+        except Exception:
+            pass
+        try:
+            rate_modes = list(recorder.par.ratecontrolmode.menuNames)
+            if 'variablehq' in rate_modes:
+                recorder.par.ratecontrolmode = 'variablehq'
+            elif 'variable' in rate_modes:
+                recorder.par.ratecontrolmode = 'variable'
+        except Exception:
+            pass
+        try:
+            recorder.par.avgbitrate = avg_kbps
+            recorder.par.peakbitrate = peak_kbps
+        except Exception:
+            pass
         extension = '.mp4' if use_h264 else '.mov'
         path = os.path.join(folder, 'Sonomika_{}{}'.format(stamp, extension))
         recorder.par.file = path

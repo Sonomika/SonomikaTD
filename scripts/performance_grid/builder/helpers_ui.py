@@ -735,7 +735,7 @@ def _ensure_reload_scripts_maintenance(settings):
             pars = str(pe.par.pars.eval()).split()
             for name in (
                 'Screenshotfolder', 'Takescreenshot', 'Recordingfolder',
-                'Recordaudio', 'Togglerecording', 'Reloadscripts',
+                'Recordingquality', 'Recordaudio', 'Togglerecording', 'Reloadscripts',
             ):
                 if name not in pars:
                     pars.append(name)
