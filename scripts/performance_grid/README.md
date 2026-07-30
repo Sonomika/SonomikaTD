@@ -42,7 +42,7 @@ Then fix any bad split boundaries (see `builder/helpers_ui.py` / `helpers_settin
 
 ## MIDI
 
-JSON templates and a full mapping reference (notes, CC, targets, controller layouts, troubleshooting) are in **[`SonomikaTD/templates/midi/README.md`](../../templates/midi/README.md)**.
+JSON templates and a full mapping reference (notes, CC, targets, controller layouts, troubleshooting) are in **[`production/templates/midi/README.md`](../../production/templates/midi/README.md)**.
 
 Quick path: **Dialogs → MIDI Device Mapper** → `/settings` **Midi** tab → pick **MIDI Device** + **MIDI Template** → **Load Template**. Built-in templates: `pad_grid_8x4`, `columns_scenes` for Ableton Move (Schwung MIDI controller). Implementation: `logic/17_osc_mapping.py`.
 

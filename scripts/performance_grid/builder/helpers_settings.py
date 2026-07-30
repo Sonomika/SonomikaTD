@@ -658,7 +658,8 @@ def _ensure_about_page(settings):
         rec_page = settings.appendCustomPage('Rec')
     for name in (
         'Screenshotfolder', 'Takescreenshot', 'Recordingfolder',
-        'Recordingquality', 'Recordaudio', 'Togglerecording', 'Recordingstatus',
+        'Recordingquality', 'Recordaudio', 'Normalizerecordingaudio',
+        'Recordingloudness', 'Togglerecording', 'Recordingstatus',
     ):
         try:
             par = getattr(settings.par, name)
@@ -730,13 +731,42 @@ def _ensure_about_page(settings):
     except Exception:
         pass
     try:
+        normalize_recording_audio = settings.par.Normalizerecordingaudio
+    except AttributeError:
+        normalize_recording_audio = rec_page.appendToggle(
+            'Normalizerecordingaudio', label='Normalize Audio After Recording')
+        normalize_recording_audio.default = False
+        normalize_recording_audio.val = False
+    try:
+        normalize_recording_audio.label = 'Normalize Audio After Recording'
+        normalize_recording_audio.order = 5
+    except Exception:
+        pass
+    try:
+        recording_loudness = settings.par.Recordingloudness
+    except AttributeError:
+        recording_loudness = rec_page.appendMenu(
+            'Recordingloudness', label='Normalization Loudness')
+        recording_loudness.default = 'safe'
+        recording_loudness.val = 'safe'
+    try:
+        recording_loudness.label = 'Normalization Loudness'
+        recording_loudness.menuNames = ['safe', 'loud']
+        recording_loudness.menuLabels = [
+            'Safe (-14 LUFS)',
+            'Loud (-10 LUFS)',
+        ]
+        recording_loudness.order = 6
+    except Exception:
+        pass
+    try:
         toggle_recording = settings.par.Togglerecording
     except AttributeError:
         toggle_recording = rec_page.appendPulse(
             'Togglerecording', label='Start / Stop Screen Recording')
     try:
         toggle_recording.label = 'Start / Stop Screen Recording'
-        toggle_recording.order = 5
+        toggle_recording.order = 7
     except Exception:
         pass
     try:
@@ -747,7 +777,7 @@ def _ensure_about_page(settings):
     try:
         recording_status.val = 'Stopped'
         recording_status.readOnly = True
-        recording_status.order = 6
+        recording_status.order = 8
     except Exception:
         pass
     try:
@@ -929,7 +959,8 @@ def _wire_settings_parexec(settings):
             'Audioactive Audiogain Audiodeviceindex Audiorefresh '
             'Audiothresholdlow Audiothresholdhigh Audiothresholdpeak '
             'Newset Savefile Saveset Openfile Openset Takescreenshot '
-            'Screenshotfolder Recordingfolder Recordingquality Recordaudio Togglerecording '
+            'Screenshotfolder Recordingfolder Recordingquality Recordaudio '
+            'Normalizerecordingaudio Recordingloudness Togglerecording '
             'Reloadscripts'
         )
         parexec.par.valuechange = True

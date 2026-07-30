@@ -218,6 +218,60 @@ def normalize_set_file_paths():
     return changed
 
 
+def _ensure_rec_normalization_settings():
+    """Migrate Rec normalization controls in-place during script-button reload."""
+    settings = _settings()
+    if settings is None:
+        return False
+    rec_page = None
+    try:
+        rec_page = next(
+            page for page in settings.customPages if page.name == 'Rec')
+    except Exception:
+        pass
+    if rec_page is None:
+        try:
+            rec_page = settings.appendCustomPage('Rec')
+        except Exception:
+            return False
+    try:
+        normalize_audio = settings.par.Normalizerecordingaudio
+    except AttributeError:
+        normalize_audio = rec_page.appendToggle(
+            'Normalizerecordingaudio',
+            label='Normalize Audio After Recording',
+        )
+        normalize_audio.default = False
+        normalize_audio.val = False
+    try:
+        normalize_audio.label = 'Normalize Audio After Recording'
+        normalize_audio.order = 5
+    except Exception:
+        pass
+    try:
+        loudness = settings.par.Recordingloudness
+    except AttributeError:
+        loudness = rec_page.appendMenu(
+            'Recordingloudness',
+            label='Normalization Loudness',
+        )
+        loudness.default = 'safe'
+        loudness.val = 'safe'
+    try:
+        loudness.label = 'Normalization Loudness'
+        loudness.menuNames = ['safe', 'loud']
+        loudness.menuLabels = ['Safe (-14 LUFS)', 'Loud (-10 LUFS)']
+        loudness.order = 6
+    except Exception:
+        pass
+    try:
+        settings.par.Togglerecording.order = 7
+        settings.par.Recordingstatus.order = 8
+    except Exception:
+        pass
+    return True
+
+
 def post_reload_heal():
     """Run after script reload: repair tabs, re-wire inputs, refresh settings UI."""
     heal_fade_tab()
@@ -228,6 +282,7 @@ def post_reload_heal():
         heal_reload_scripts_button()
     except Exception:
         pass
+    _ensure_rec_normalization_settings()
     try:
         clear_embedded_dat_cache(('osc_callbacks.py', 'midi_callbacks.py', 'midi_table_exec.py'))
     except Exception:
@@ -530,6 +585,7 @@ def onInit(full=True):
         heal_reload_scripts_button()
     except Exception:
         pass
+    _ensure_rec_normalization_settings()
     _ensure_matrix_schema()
     _ensure_comp_schema()
     _ensure_scene_bar()

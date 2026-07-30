@@ -19,15 +19,18 @@ tmp/
 sandbox/
 output/
 recordings/
+screenshots/
 *_embedded_cache/
 *.bundle
 
 # User-specific performance sets (local media paths)
 sets/*.json
+production/sets/*.json
 
 # Local TouchDesigner projects and backups
 *.toe
 !/SonomikaTD.toe
+!/production/SonomikaTD.toe
 Backup/
 
 # Local third-party TouchDesigner effects

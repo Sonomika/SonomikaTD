@@ -715,6 +715,56 @@ def _ensure_reload_scripts_maintenance(settings):
         pulse = about_page.appendPulse('Reloadscripts', label='Reload Scripts (Dev)')
     if pulse is None:
         return False
+    # Add newer Rec controls to existing projects during a script reload,
+    # without requiring the settings COMP to be rebuilt.
+    try:
+        settings.par.Normalizerecordingaudio
+    except AttributeError:
+        rec_page = None
+        for page in settings.customPages:
+            if page.name == 'Rec':
+                rec_page = page
+                break
+        if rec_page is not None:
+            normalize_audio = rec_page.appendToggle(
+                'Normalizerecordingaudio',
+                label='Normalize Audio After Recording',
+            )
+            normalize_audio.default = False
+            normalize_audio.val = False
+            normalize_audio.order = 5
+            try:
+                settings.par.Togglerecording.order = 7
+                settings.par.Recordingstatus.order = 8
+            except Exception:
+                pass
+    try:
+        recording_loudness = settings.par.Recordingloudness
+    except AttributeError:
+        rec_page = None
+        for page in settings.customPages:
+            if page.name == 'Rec':
+                rec_page = page
+                break
+        if rec_page is not None:
+            recording_loudness = rec_page.appendMenu(
+                'Recordingloudness',
+                label='Normalization Loudness',
+            )
+            recording_loudness.default = 'safe'
+            recording_loudness.val = 'safe'
+    try:
+        recording_loudness.label = 'Normalization Loudness'
+        recording_loudness.menuNames = ['safe', 'loud']
+        recording_loudness.menuLabels = [
+            'Safe (-14 LUFS)',
+            'Loud (-10 LUFS)',
+        ]
+        recording_loudness.order = 6
+        settings.par.Togglerecording.order = 7
+        settings.par.Recordingstatus.order = 8
+    except Exception:
+        pass
     try:
         pulse.label = 'Reload Scripts (Dev)'
         settings.par.Reloadscripts.label = 'Reload Scripts (Dev)'
@@ -735,7 +785,8 @@ def _ensure_reload_scripts_maintenance(settings):
             pars = str(pe.par.pars.eval()).split()
             for name in (
                 'Screenshotfolder', 'Takescreenshot', 'Recordingfolder',
-                'Recordingquality', 'Recordaudio', 'Togglerecording', 'Reloadscripts',
+                'Recordingquality', 'Recordaudio', 'Normalizerecordingaudio',
+                'Recordingloudness', 'Togglerecording', 'Reloadscripts',
             ):
                 if name not in pars:
                     pars.append(name)

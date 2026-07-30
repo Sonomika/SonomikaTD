@@ -2,7 +2,7 @@
 
 Performance launcher for TouchDesigner: layer/column grid, canvas presets, column crossfade, and effect TOX slots.
 
-For performance and day-to-day use, see [manual.md](manual.md). For making TOX effects that work well in Sonomika, see **Making Effects** in [manual.md](manual.md). MIDI mapping reference: [templates/midi/README.md](templates/midi/README.md).
+For performance and day-to-day use, see [manual.md](production/manual.md). For making TOX effects that work well in Sonomika, see **Making Effects** in [manual.md](production/manual.md). MIDI mapping reference: [production/templates/midi/README.md](production/templates/midi/README.md).
 
 ---
 
@@ -18,8 +18,10 @@ SonomikaTD/
       logic/                # Runtime (assembled into logic DAT)
       builder/              # Network build / patch / reload
     patch_*.py              # Effect TOX helpers
-  templates/midi/           # MIDI mapping templates
-  tox/                      # Factory / MIT sample TOX assets
+  production/
+    SonomikaTD.toe          # TouchDesigner project
+    templates/midi/         # MIDI mapping templates
+    tox/                    # Factory / MIT sample TOX assets
 ```
 
 | Path | Role |
@@ -28,8 +30,8 @@ SonomikaTD/
 | `scripts/performance_grid/logic/` | Runtime logic (assembled into `logic` DAT) |
 | `scripts/performance_grid/embedded/` | TouchDesigner DAT scripts |
 | `scripts/performance_grid/builder/` | Network build, patch, reload API |
-| `templates/midi/` | MIDI mapping templates |
-| `tox/` | Factory / MIT sample TOX assets |
+| `production/templates/midi/` | MIDI mapping templates |
+| `production/tox/` | Factory / MIT sample TOX assets |
 | `tox premium/` | Local-only premium effects — tracked in [SonomikaTD_FX](https://github.com/Sonomika/SonomikaTD_FX) |
 | `release/` | Local distribution builds (not in git) |
 

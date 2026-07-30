@@ -1,6 +1,9 @@
 import json
 import os
 
+_RECORDING_NORMALIZE_PROCESS = None
+_RECORDING_NORMALIZE_OUTPUT = ''
+
 try:
     ParMode
 except NameError:
@@ -67,6 +70,118 @@ def take_program_screenshot():
         return None
 
 
+def _set_recording_status(value):
+    settings = _settings_op()
+    if settings is not None:
+        try:
+            settings.par.Recordingstatus = value
+        except Exception:
+            pass
+
+
+def _poll_recording_normalization():
+    """Update the Rec status when the background FFmpeg job completes."""
+    global _RECORDING_NORMALIZE_PROCESS, _RECORDING_NORMALIZE_OUTPUT
+    process = _RECORDING_NORMALIZE_PROCESS
+    if process is None:
+        return
+    result = process.poll()
+    if result is None:
+        _defer_run(
+            _poll_recording_normalization,
+            delayMilliSeconds=250,
+            fromOP=_root(),
+        )
+        return
+    output_path = _RECORDING_NORMALIZE_OUTPUT
+    _RECORDING_NORMALIZE_PROCESS = None
+    _RECORDING_NORMALIZE_OUTPUT = ''
+    if result == 0 and os.path.isfile(output_path):
+        _set_recording_status(
+            'Normalized: {}'.format(os.path.basename(output_path)))
+        print('Normalized recording audio -> {}'.format(output_path))
+    else:
+        _set_recording_status('Normalization failed (original kept)')
+        print('Audio normalization failed; original recording was kept')
+
+
+def _normalize_recording_audio(path, target_lufs=-14):
+    """Create a loudness-normalized copy without blocking TouchDesigner."""
+    global _RECORDING_NORMALIZE_PROCESS, _RECORDING_NORMALIZE_OUTPUT
+    try:
+        import shutil
+        import subprocess
+        ffmpeg = shutil.which('ffmpeg')
+        if not ffmpeg:
+            # TouchDesigner ships FFmpeg beside its executable, but that folder
+            # is not necessarily included in the process PATH.
+            candidates = []
+            try:
+                candidates.append(os.path.join(str(app.binFolder), 'ffmpeg.exe'))
+            except Exception:
+                pass
+            try:
+                import sys
+                candidates.append(os.path.join(
+                    os.path.dirname(os.path.abspath(sys.executable)),
+                    'ffmpeg.exe',
+                ))
+            except Exception:
+                pass
+            ffmpeg = next(
+                (candidate for candidate in candidates
+                 if candidate and os.path.isfile(candidate)),
+                None,
+            )
+        if not ffmpeg:
+            _set_recording_status('Normalization unavailable: FFmpeg not found')
+            print('Audio normalization skipped: FFmpeg was not found in PATH')
+            return False
+        stem, extension = os.path.splitext(path)
+        output_path = '{}_normalized{}'.format(stem, extension)
+        try:
+            target_lufs = -10 if int(target_lufs) == -10 else -14
+        except Exception:
+            target_lufs = -14
+        command = [
+            ffmpeg, '-y', '-i', path,
+            '-map', '0:v:0', '-map', '0:a:0',
+            '-c:v', 'copy',
+            '-af', 'loudnorm=I={}:TP=-1:LRA=11'.format(target_lufs),
+            # TouchDesigner's bundled FFmpeg does not include an AAC encoder.
+            # MP3 is supported by both that build and the MP4 container.
+            '-c:a', 'libmp3lame', '-b:a', '192k',
+            output_path,
+        ]
+        startupinfo = None
+        creationflags = 0
+        if os.name == 'nt':
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+        _RECORDING_NORMALIZE_PROCESS = subprocess.Popen(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            startupinfo=startupinfo,
+            creationflags=creationflags,
+        )
+        _RECORDING_NORMALIZE_OUTPUT = output_path
+        _set_recording_status('Normalizing audio...')
+        _defer_run(
+            _poll_recording_normalization,
+            delayMilliSeconds=250,
+            fromOP=_root(),
+        )
+        return True
+    except Exception as exc:
+        _RECORDING_NORMALIZE_PROCESS = None
+        _RECORDING_NORMALIZE_OUTPUT = ''
+        _set_recording_status('Normalization failed (original kept)')
+        print('Audio normalization failed: {}'.format(exc))
+        return False
+
+
 def toggle_screen_recording():
     """Start or stop recording the final program, with optional app audio."""
     r = _root()
@@ -95,9 +210,32 @@ def toggle_screen_recording():
         is_recording = False
     if is_recording:
         try:
+            recording_path = str(recorder.par.file.eval())
+            normalize_audio = False
+            target_lufs = -14
+            try:
+                normalize_audio = (
+                    bool(settings.par.Recordaudio.eval())
+                    and bool(settings.par.Normalizerecordingaudio.eval())
+                )
+                target_lufs = (
+                    -10
+                    if str(settings.par.Recordingloudness.eval()) == 'loud'
+                    else -14
+                )
+            except Exception:
+                pass
             recorder.par.record = False
             settings.par.Recordingstatus = 'Stopped'
             print('Screen recording stopped')
+            if normalize_audio and recording_path:
+                # Give Movie File Out time to close and finalize its container.
+                _defer_run(
+                    lambda: _normalize_recording_audio(
+                        recording_path, target_lufs),
+                    delayMilliSeconds=750,
+                    fromOP=r,
+                )
             try:
                 _pin_settings_tab('Rec')
             except Exception:

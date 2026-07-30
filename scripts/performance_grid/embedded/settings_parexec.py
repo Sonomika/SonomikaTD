@@ -200,6 +200,9 @@ def _reload_from_disk():
     import os
     if _patch_dat_scripts_from_disk(comp):
         print('Reload OK (patch_dat_scripts_from_disk)')
+        # The fast patch path must also create newly introduced settings
+        # parameters and refresh the custom settings panel.
+        _post_reload_heal()
         return True
     for builder_path in _reload_paths():
         reload_path = os.path.join(os.path.dirname(builder_path), 'reload_performance.py')
