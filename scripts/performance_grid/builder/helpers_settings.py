@@ -21,7 +21,16 @@ SETTINGS_PAREXEC = assemble_settings_parexec(
 
 ABOUT_BRAND = 'Sonomika 1.0'
 ABOUT_INFO = 'https://linktr.ee/sonomika'
-_ABOUT_PAR_NAMES = frozenset(('Aboutbrand', 'Aboutinfo'))
+_ABOUT_PAR_NAMES = frozenset((
+    'Aboutbrand',
+    'Aboutinfo',
+    'Packagefile',
+    'Installpremiumpackage',
+    'Premiuminstallstatus',
+    'Makepackagefromset',
+    'Packagestatus',
+    'Reloadscripts',
+))
 _SPOUT_PAR_NAMES = ('Spoutactive', 'Spoutname')
 
 
@@ -961,7 +970,7 @@ def _wire_settings_parexec(settings):
             'Newset Savefile Saveset Openfile Openset Takescreenshot '
             'Screenshotfolder Recordingfolder Recordingquality Recordaudio '
             'Normalizerecordingaudio Recordingloudness Togglerecording '
-            'Reloadscripts'
+            'Packagefile Installpremiumpackage Makepackagefromset Reloadscripts'
         )
         parexec.par.valuechange = True
         parexec.par.onpulse = True

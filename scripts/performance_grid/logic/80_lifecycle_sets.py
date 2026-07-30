@@ -81,6 +81,312 @@ def open_effects_folder():
         return False
 
 
+def _set_premium_install_status(message):
+    settings = _settings()
+    if settings is not None:
+        try:
+            settings.par.Premiuminstallstatus = str(message)
+        except Exception:
+            pass
+
+
+def install_premium_package(path=None):
+    """Validate and install a package ZIP into the current Sonomika folder."""
+    import os
+    import shutil
+    import stat
+    import zipfile
+
+    _set_premium_install_status('Checking package...')
+    if not path:
+        _set_premium_install_status(
+            'Choose a ZIP in Install Package File first')
+        return False
+    path = os.path.normpath(str(path or '').strip())
+    if not os.path.isabs(path):
+        path = os.path.normpath(os.path.join(str(project.folder), path))
+    if not os.path.isfile(path) or not zipfile.is_zipfile(path):
+        _set_premium_install_status('Invalid package: select a ZIP file')
+        return False
+
+    install_root = os.path.abspath(str(project.folder))
+    allowed_roots = {'assets', 'sets', 'tox'}
+    max_files = 10000
+    max_unpacked_bytes = 2 * 1024 * 1024 * 1024
+    try:
+        with zipfile.ZipFile(path, 'r') as archive:
+            infos = [
+                info for info in archive.infolist()
+                if not info.is_dir()
+                and not info.filename.replace('\\', '/').startswith('__MACOSX/')
+            ]
+            if not infos:
+                raise ValueError('package is empty')
+            if len(infos) > max_files:
+                raise ValueError('package contains too many files')
+            if sum(max(0, int(info.file_size)) for info in infos) > max_unpacked_bytes:
+                raise ValueError('package is too large')
+
+            names = []
+            for info in infos:
+                name = info.filename.replace('\\', '/').strip('/')
+                parts = [part for part in name.split('/') if part]
+                if (
+                    not parts
+                    or any(part in ('.', '..') for part in parts)
+                    or ':' in parts[0]
+                    or name.startswith('/')
+                ):
+                    raise ValueError('unsafe path: {}'.format(info.filename))
+                mode = (int(info.external_attr) >> 16) & 0xFFFF
+                if mode and stat.S_ISLNK(mode):
+                    raise ValueError('symbolic links are not allowed')
+                if (
+                    len(parts) == 1
+                    and parts[0].lower()
+                    in ('readme.md', 'manifest.json', 'license.txt')
+                ):
+                    continue
+                names.append((info, parts))
+            if not names:
+                raise ValueError('package contains no installable files')
+
+            strip_wrapper = False
+            if not all(parts[0].lower() in allowed_roots for _, parts in names):
+                wrappers = {parts[0] for _, parts in names if len(parts) >= 2}
+                strip_wrapper = (
+                    len(wrappers) == 1
+                    and all(
+                        len(parts) >= 2
+                        and parts[1].lower() in allowed_roots
+                        for _, parts in names
+                    )
+                )
+                if not strip_wrapper:
+                    raise ValueError(
+                        'package must contain only assets, sets, and tox folders')
+
+            plan = []
+            for info, parts in names:
+                relative_parts = parts[1:] if strip_wrapper else parts
+                if relative_parts[0].lower() not in allowed_roots:
+                    raise ValueError('unsupported folder: {}'.format(parts[0]))
+                target = os.path.abspath(
+                    os.path.join(install_root, *relative_parts))
+                if os.path.commonpath((install_root, target)) != install_root:
+                    raise ValueError('unsafe destination path')
+                plan.append((info, target))
+
+            conflicts = [target for _, target in plan if os.path.exists(target)]
+            if conflicts:
+                message = (
+                    '{} existing file(s) will be replaced.\n\n'
+                    'Continue installing {}?'
+                ).format(len(conflicts), os.path.basename(path))
+                try:
+                    choice = ui.messageBox(
+                        'Install Package',
+                        message,
+                        buttons=['Cancel', 'Overwrite'],
+                    )
+                except Exception:
+                    choice = 0
+                if int(choice) != 1:
+                    _set_premium_install_status('Installation cancelled')
+                    return False
+
+            for info, target in plan:
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with archive.open(info, 'r') as source:
+                    with open(target, 'wb') as destination:
+                        shutil.copyfileobj(source, destination)
+    except Exception as exc:
+        _set_premium_install_status('Install failed: {}'.format(exc))
+        print('Package install failed:', exc)
+        return False
+
+    set_count = sum(
+        1 for _, target in plan
+        if os.path.splitext(target)[1].lower() == '.json'
+        and os.path.basename(os.path.dirname(target)).lower() == 'sets'
+    )
+    _set_premium_install_status(
+        'Installed {} files ({} set{})'.format(
+            len(plan), set_count, '' if set_count == 1 else 's'))
+    try:
+        _refresh_settings_params_panel()
+    except Exception:
+        pass
+    print('Package installed:', path)
+    return True
+
+
+def _set_package_status(message):
+    settings = _settings()
+    if settings is not None:
+        try:
+            settings.par.Packagestatus = str(message)
+        except Exception:
+            pass
+
+
+def make_package_from_current_set():
+    """Create an installable ZIP from the set currently shown in Open File."""
+    import copy
+    import datetime
+    import json
+    import os
+    import re
+    import shutil
+    import tempfile
+    import zipfile
+
+    settings = _settings()
+    if settings is None:
+        return False
+    try:
+        raw_set_path = str(settings.par.Openfile.eval()).strip()
+    except Exception:
+        raw_set_path = ''
+    if not raw_set_path:
+        _set_package_status('Open a set first')
+        return False
+    set_path = (
+        os.path.normpath(raw_set_path)
+        if os.path.isabs(raw_set_path)
+        else os.path.normpath(os.path.join(str(project.folder), raw_set_path))
+    )
+    if not os.path.isfile(set_path):
+        _set_package_status('Current set file was not found')
+        return False
+    try:
+        with open(set_path, encoding='utf-8') as stream:
+            original_state = json.load(stream)
+    except Exception as exc:
+        _set_package_status('Could not read current set')
+        print('Make package: invalid set JSON:', exc)
+        return False
+    if not isinstance(original_state, dict):
+        _set_package_status('Current set is not valid')
+        return False
+
+    slug = re.sub(
+        r'[^A-Za-z0-9_-]+',
+        '_',
+        os.path.splitext(os.path.basename(set_path))[0],
+    ).strip('_').lower() or 'sonomika_package'
+    state = copy.deepcopy(original_state)
+    path_records = []
+
+    def _collect_paths(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key == 'path' and isinstance(item, str) and item.strip():
+                    path_records.append((value, key, item.strip()))
+                else:
+                    _collect_paths(item)
+        elif isinstance(value, list):
+            for item in value:
+                _collect_paths(item)
+
+    _collect_paths(state)
+    project_root = os.path.abspath(str(project.folder))
+    resolved_records = []
+    missing = []
+    for owner, key, stored in path_records:
+        source = _resolve_asset_for_open_set(stored, set_path)
+        if not source or not os.path.isfile(source):
+            missing.append(stored)
+        else:
+            resolved_records.append((owner, key, stored, os.path.abspath(source)))
+    if missing:
+        _set_package_status(
+            'Missing {} file{}: {}'.format(
+                len(missing),
+                '' if len(missing) == 1 else 's',
+                os.path.basename(missing[0]),
+            )
+        )
+        print('Make package missing files:', missing)
+        return False
+
+    packages_dir = os.path.join(project_root, 'packages')
+    os.makedirs(packages_dir, exist_ok=True)
+    output_path = os.path.join(packages_dir, slug + '.zip')
+    if os.path.exists(output_path):
+        stamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_path = os.path.join(
+            packages_dir, '{}_{}.zip'.format(slug, stamp))
+
+    _set_package_status('Making package...')
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix='sonomika_package_') as temp_root:
+            os.makedirs(os.path.join(temp_root, 'assets', slug), exist_ok=True)
+            os.makedirs(os.path.join(temp_root, 'sets'), exist_ok=True)
+            os.makedirs(os.path.join(temp_root, 'tox', slug), exist_ok=True)
+            source_destinations = {}
+            used_destinations = set()
+            for owner, key, stored, source in resolved_records:
+                source_key = os.path.normcase(source)
+                relative = source_destinations.get(source_key)
+                if relative is None:
+                    category = (
+                        'tox'
+                        if os.path.splitext(source)[1].lower() == '.tox'
+                        else 'assets'
+                    )
+                    filename = os.path.basename(source)
+                    stem, extension = os.path.splitext(filename)
+                    candidate = '{}/{}/{}'.format(category, slug, filename)
+                    suffix = 2
+                    while candidate.lower() in used_destinations:
+                        candidate = '{}/{}/{}_{}{}'.format(
+                            category, slug, stem, suffix, extension)
+                        suffix += 1
+                    relative = candidate
+                    used_destinations.add(relative.lower())
+                    source_destinations[source_key] = relative
+                    destination = os.path.join(
+                        temp_root, *relative.split('/'))
+                    shutil.copy2(source, destination)
+                owner[key] = relative
+
+            packaged_set = os.path.join(
+                temp_root, 'sets', slug + '.json')
+            with open(packaged_set, 'w', encoding='utf-8') as stream:
+                json.dump(state, stream, indent=2)
+                stream.write('\n')
+            readme = os.path.join(temp_root, 'README.md')
+            with open(readme, 'w', encoding='utf-8') as stream:
+                stream.write(
+                    (
+                        '# {}\n\n'
+                        'Copy this package into Sonomika using '
+                        'Settings -> About -> Install Package.\n'
+                    ).format(os.path.splitext(os.path.basename(set_path))[0])
+                )
+            with zipfile.ZipFile(
+                output_path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+                for folder, _, filenames in os.walk(temp_root):
+                    for filename in filenames:
+                        full_path = os.path.join(folder, filename)
+                        archive.write(
+                            full_path,
+                            os.path.relpath(full_path, temp_root).replace(
+                                '\\', '/'),
+                        )
+    except Exception as exc:
+        _set_package_status('Package failed: {}'.format(exc))
+        print('Make package failed:', exc)
+        return False
+
+    _set_package_status(
+        'Created packages/{}'.format(os.path.basename(output_path)))
+    print('Package created:', output_path)
+    return output_path
+
+
 def _td_exec_ns():
     ns = {'op': op}
     try:
@@ -272,6 +578,102 @@ def _ensure_rec_normalization_settings():
     return True
 
 
+def _ensure_about_installer_settings():
+    """Create package installer controls directly during live script reload."""
+    settings = _settings()
+    if settings is None:
+        return False
+    about_page = None
+    try:
+        about_page = next(
+            page for page in settings.customPages if page.name == 'About')
+    except Exception:
+        pass
+    if about_page is None:
+        try:
+            about_page = settings.appendCustomPage('About')
+        except Exception:
+            return False
+    try:
+        package_file = settings.par.Packagefile
+    except AttributeError:
+        package_file = about_page.appendFile(
+            'Packagefile',
+            label='Install Package File',
+        )
+    try:
+        install_button = settings.par.Installpremiumpackage
+    except AttributeError:
+        install_button = about_page.appendPulse(
+            'Installpremiumpackage',
+            label='Install Package',
+        )
+    try:
+        install_status = settings.par.Premiuminstallstatus
+    except AttributeError:
+        install_status = about_page.appendStr(
+            'Premiuminstallstatus',
+            label='Install Status',
+        )
+        install_status.val = 'Select a package'
+    try:
+        make_package = settings.par.Makepackagefromset
+    except AttributeError:
+        make_package = about_page.appendPulse(
+            'Makepackagefromset',
+            label='Make Package',
+        )
+    try:
+        package_status = settings.par.Packagestatus
+    except AttributeError:
+        package_status = about_page.appendStr(
+            'Packagestatus',
+            label='Package Status',
+        )
+        package_status.val = 'Ready'
+    try:
+        package_file.label = 'Install Package File'
+        package_file.order = 2
+        install_button.label = 'Install Package'
+        install_button.order = 3
+        install_status.label = 'Install Status'
+        if str(install_status.eval()).strip() in ('', 'Ready'):
+            install_status.val = 'Select a package'
+        install_status.readOnly = True
+        install_status.order = 4
+        make_package.label = 'Make Package'
+        make_package.order = 5
+        package_status.label = 'Package Status'
+        package_status.readOnly = True
+        package_status.order = 6
+        settings.par.Reloadscripts.order = 7
+    except Exception:
+        pass
+    # Keep each About action group visually distinct in the parameter panel.
+    for name in ('Packagefile', 'Makepackagefromset', 'Reloadscripts'):
+        try:
+            getattr(settings.par, name).startSection = True
+        except Exception:
+            pass
+    parexec = settings.op('settings_parexec')
+    if parexec is not None:
+        try:
+            watched = str(parexec.par.pars.eval()).split()
+            for name in (
+                'Packagefile',
+                'Installpremiumpackage',
+                'Makepackagefromset',
+            ):
+                if name not in watched:
+                    watched.append(name)
+            parexec.par.pars = ' '.join(watched)
+            parexec.par.onpulse = True
+            parexec.par.active = True
+        except Exception:
+            pass
+    return True
+
+
 def post_reload_heal():
     """Run after script reload: repair tabs, re-wire inputs, refresh settings UI."""
     heal_fade_tab()
@@ -283,6 +685,7 @@ def post_reload_heal():
     except Exception:
         pass
     _ensure_rec_normalization_settings()
+    _ensure_about_installer_settings()
     try:
         clear_embedded_dat_cache(('osc_callbacks.py', 'midi_callbacks.py', 'midi_table_exec.py'))
     except Exception:
@@ -586,6 +989,7 @@ def onInit(full=True):
     except Exception:
         pass
     _ensure_rec_normalization_settings()
+    _ensure_about_installer_settings()
     _ensure_matrix_schema()
     _ensure_comp_schema()
     _ensure_scene_bar()
@@ -1297,6 +1701,7 @@ def _settings_set_file_pars(path):
         s.par.Openfile = rel
     except Exception:
         pass
+    _set_package_status('Ready')
 
 
 def _normalize_set_path(path):
@@ -1383,6 +1788,30 @@ def save_performance_set(set_name=None, path=None):
                 os.remove(temp_path)
             except Exception:
                 pass
+
+
+def _resolve_asset_for_open_set(stored_path, set_path):
+    """Resolve installed paths, then sibling paths inside a package folder."""
+    resolved = _resolve_stored_asset_path(stored_path)
+    if resolved and os.path.isfile(resolved):
+        return resolved
+    raw = str(stored_path or '').strip()
+    if not raw or os.path.isabs(raw):
+        return resolved
+    try:
+        set_folder = os.path.dirname(os.path.abspath(set_path))
+        # Package layout: <package>/sets/name.json beside assets/ and tox/.
+        package_root = (
+            os.path.dirname(set_folder)
+            if os.path.basename(set_folder).lower() == 'sets'
+            else set_folder
+        )
+        packaged = os.path.normpath(os.path.join(package_root, raw))
+        if os.path.isfile(packaged):
+            return packaged.replace('\\', '/')
+    except Exception:
+        pass
+    return resolved
 
 
 def load_performance_set(path=None):
@@ -1527,7 +1956,7 @@ def load_performance_set(path=None):
             layer = int(row.get('layer', 1))
             col = int(row.get('col', 1))
             ctype = str(row.get('type', '')).strip().lower()
-            fpath = _resolve_stored_asset_path(row.get('path', ''))
+            fpath = _resolve_asset_for_open_set(row.get('path', ''), path)
             if not ctype or not fpath or ctype not in VALID_CLIP_TYPES:
                 continue
             if layer < 1 or layer > _scene_num_layers(scene) or col < 1 or col > _scene_num_cols(scene):

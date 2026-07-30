@@ -126,6 +126,21 @@ For videos, Freeze holds the current frame. For TOX effects, Sonomika tries to p
 
 The Perform **Settings** panel is driven by the **`/settings`** COMP at the project root (not inside `project1`). After upgrading an older project, pulse **Reload Scripts (Dev)** on **About** once so paths and panels heal correctly.
 
+### About
+
+**Install a package**
+
+1. Choose a ZIP with **Install Package File**.
+2. Press **Install Package**.
+3. Check **Install Status**.
+
+**Make a package from your current set**
+
+1. Save or open the set you want to package.
+2. Open **Settings -> About** and press **Make Package**.
+3. Check **Package Status**. The finished ZIP is saved in the `packages`
+   folder.
+
 ### Canvas
 
 Use **Settings -> Canvas** to choose the main output resolution.

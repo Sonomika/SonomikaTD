@@ -382,7 +382,10 @@ def onValueChange(par, prev):
     logic = _pm_logic()
     if logic is None:
         return
-    if par.name in ('Canvaspreset', 'Canvaswidth', 'Canvasheight', 'Canvasbg', 'Canvasbgr', 'Canvasbgg', 'Canvasbgb'):
+    if par.name == 'Openfile':
+        if hasattr(logic, '_set_package_status'):
+            logic._set_package_status('Ready')
+    elif par.name in ('Canvaspreset', 'Canvaswidth', 'Canvasheight', 'Canvasbg', 'Canvasbgr', 'Canvasbgg', 'Canvasbgb'):
         if hasattr(logic, '_apply_canvas_settings_change'):
             logic._apply_canvas_settings_change(str(par.name), par)
         elif par.name == 'Canvaspreset':
@@ -514,6 +517,14 @@ def onPulse(par):
     elif name == 'Togglerecording':
         if hasattr(logic, 'toggle_screen_recording'):
             logic.toggle_screen_recording()
+    elif name == 'Installpremiumpackage':
+        if hasattr(logic, 'install_premium_package'):
+            s = _settings()
+            logic.install_premium_package(
+                path=str(s.par.Packagefile.eval()).strip())
+    elif name == 'Makepackagefromset':
+        if hasattr(logic, 'make_package_from_current_set'):
+            logic.make_package_from_current_set()
     elif name == 'Savecanvassize':
         if hasattr(logic, 'save_canvas_size'):
             logic.save_canvas_size()

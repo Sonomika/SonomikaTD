@@ -715,6 +715,55 @@ def _ensure_reload_scripts_maintenance(settings):
         pulse = about_page.appendPulse('Reloadscripts', label='Reload Scripts (Dev)')
     if pulse is None:
         return False
+    try:
+        package_file = settings.par.Packagefile
+    except AttributeError:
+        package_file = about_page.appendFile(
+            'Packagefile',
+            label='Install Package File',
+        )
+    try:
+        install_premium = settings.par.Installpremiumpackage
+    except AttributeError:
+        install_premium = about_page.appendPulse(
+            'Installpremiumpackage',
+            label='Install Package',
+        )
+    try:
+        install_status = settings.par.Premiuminstallstatus
+    except AttributeError:
+        install_status = about_page.appendStr(
+            'Premiuminstallstatus',
+            label='Install Status',
+        )
+        install_status.val = 'Select a package'
+    try:
+        make_package = settings.par.Makepackagefromset
+    except AttributeError:
+        make_package = about_page.appendPulse(
+            'Makepackagefromset',
+            label='Make Package',
+        )
+    try:
+        package_status = settings.par.Packagestatus
+    except AttributeError:
+        package_status = about_page.appendStr(
+            'Packagestatus',
+            label='Package Status',
+        )
+        package_status.val = 'Ready'
+    try:
+        package_file.label = 'Install Package File'
+        install_premium.label = 'Install Package'
+        install_status.label = 'Install Status'
+        if str(install_status.eval()).strip() in ('', 'Ready'):
+            install_status.val = 'Select a package'
+        install_status.readOnly = True
+        make_package.label = 'Make Package'
+        package_status.label = 'Package Status'
+        package_status.readOnly = True
+    except Exception:
+        pass
     # Add newer Rec controls to existing projects during a script reload,
     # without requiring the settings COMP to be rebuilt.
     try:
@@ -770,10 +819,22 @@ def _ensure_reload_scripts_maintenance(settings):
         settings.par.Reloadscripts.label = 'Reload Scripts (Dev)'
     except Exception:
         pass
+    # Visually separate the About information, package installer, package
+    # creator, and developer reload controls in TouchDesigner's parameter UI.
+    for name in ('Packagefile', 'Makepackagefromset', 'Reloadscripts'):
+        try:
+            getattr(settings.par, name).startSection = True
+        except Exception:
+            pass
     for name, index in (
         ('Aboutbrand', 0),
         ('Aboutinfo', 1),
-        ('Reloadscripts', 2),
+        ('Packagefile', 2),
+        ('Installpremiumpackage', 3),
+        ('Premiuminstallstatus', 4),
+        ('Makepackagefromset', 5),
+        ('Packagestatus', 6),
+        ('Reloadscripts', 7),
     ):
         try:
             getattr(settings.par, name).order = float(index)
@@ -786,7 +847,9 @@ def _ensure_reload_scripts_maintenance(settings):
             for name in (
                 'Screenshotfolder', 'Takescreenshot', 'Recordingfolder',
                 'Recordingquality', 'Recordaudio', 'Normalizerecordingaudio',
-                'Recordingloudness', 'Togglerecording', 'Reloadscripts',
+                'Recordingloudness', 'Togglerecording',
+                'Packagefile', 'Installpremiumpackage',
+                'Makepackagefromset', 'Reloadscripts',
             ):
                 if name not in pars:
                     pars.append(name)
