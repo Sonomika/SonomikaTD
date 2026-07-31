@@ -1315,23 +1315,60 @@ def _sync_logo_overlay_file_top(t, force_reload=False):
     except Exception:
         path = ''
     if not path:
+        try:
+            path = str(_logo_path() or '').strip()
+        except Exception:
+            path = ''
+        if path:
+            try:
+                t.par.Imagefile = path
+            except Exception:
+                pass
+    if not path:
         return False
     changed = False
-    try:
-        cur = str(logo_file.par.file.eval()).strip()
-        if force_reload or cur != path:
-            logo_file.par.file = path
+    for top in (logo_file, t.op('logo_default')):
+        if top is None:
+            continue
+        try:
+            # Never leave moviefilein on a tiny custom resolution (old 300x52 bake).
+            top.par.outputresolution = 'default'
+            top.par.resmult = False
+        except Exception:
+            pass
+        try:
+            cur = str(top.par.file.eval()).strip()
+            tiny = False
             try:
-                logo_file.par.file.mode = ParMode.CONSTANT
+                tiny = int(top.width) > 0 and int(top.width) < 600
             except Exception:
-                pass
-            try:
-                logo_file.par.reloadpulse.pulse()
-            except Exception:
-                pass
-            changed = True
-    except Exception:
-        pass
+                tiny = False
+            if force_reload or cur != path or tiny:
+                top.par.file = path
+                try:
+                    top.par.file.mode = ParMode.CONSTANT
+                except Exception:
+                    pass
+                try:
+                    top.par.reloadpulse.pulse()
+                except Exception:
+                    pass
+                try:
+                    top.cook(force=True)
+                except Exception:
+                    pass
+                changed = True
+        except Exception:
+            pass
+    # Prefer the file TOP once a real path is available (avoids tiny baked default).
+    src = t.op('logo_source')
+    if src is not None:
+        try:
+            if int(float(src.par.index.eval())) != 1:
+                src.par.index = 1
+                changed = True
+        except Exception:
+            pass
     return changed
 
 
@@ -1515,6 +1552,11 @@ def _protect_logo_overlay_tox_resolution(t):
     _heal_logo_overlay_imagefile_par(t)
     _heal_logo_overlay_place_bindings(t)
     try:
+        # Re-assert project logo when Imagefile is empty or source is still tiny.
+        _sync_logo_overlay_file_top(t, force_reload=False)
+    except Exception:
+        pass
+    try:
         t.allowCooking = True
     except Exception:
         pass
@@ -1524,11 +1566,14 @@ def _protect_logo_overlay_tox_resolution(t):
             slot.allowCooking = True
     except Exception:
         pass
-    logo_file = t.op('logo_file')
-    if logo_file is not None:
+    for name in ('logo_default', 'logo_file'):
+        node = t.op(name)
+        if node is None:
+            continue
         try:
-            logo_file.par.outputresolution = 'default'
-            logo_file.par.resmult = False
+            # Keep native pixel size so fit/transform scale the hi-res asset.
+            node.par.outputresolution = 'default'
+            node.par.resmult = False
         except Exception:
             pass
     out = t.op('out1')
@@ -2130,7 +2175,7 @@ def _set_slot_tox_transport_frozen(slot, frozen=True):
     if slot is None:
         return
     key = 'sonomika_transport_tox_locked'
-    source = slot.op('tox_fit')
+    source = _slot_freeze_source(slot, 'tox')
     if frozen:
         try:
             if slot.fetch(key, False, search=False):
@@ -2185,10 +2230,11 @@ def _pause_slot(slot, on=False, keep_tox_cooking=False, clip_type=None):
         if clip_type == 'tox' and _is_logo_overlay_tox(t):
             allow = True
             force_logo_cooking = True
-            try:
-                _keep_logo_overlay_slot_cooking(slot)
-            except Exception:
-                pass
+            if not transport_paused:
+                try:
+                    _keep_logo_overlay_slot_cooking(slot)
+                except Exception:
+                    pass
         elif clip_type == 'tox':
             allow = bool(on) or bool(keep_tox_cooking)
         else:

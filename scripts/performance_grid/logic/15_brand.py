@@ -26,9 +26,9 @@ def _scene_bar_logo_y():
 def _scene_bar_logo_x():
     """Align logo with Layer column titles (centered in ROW_LABEL_W)."""
     try:
-        return int(SCENE_BAR_LOGO_X)
+        return int(SCENE_BAR_LOGO_X) + int(SCENE_BAR_LOGO_X_NUDGE)
     except Exception:
-        return max(SCENE_BAR_LOGO_PAD, (ROW_LABEL_W - 36) // 2)
+        return max(SCENE_BAR_LOGO_PAD, (ROW_LABEL_W - 36) // 2) + 5
 
 
 def _ui_asset_path(filename):
@@ -40,15 +40,17 @@ def _ui_asset_path(filename):
     # .toe remains portable when distributed without the assets directory.
     try:
         owner = op('/project1')
-        key = 'assets/' + filename
-        if owner is not None:
-            hits = owner.vfs.find(pattern=key)
-            if hits:
-                return hits[0].virtualPath
+        for key in ('assets/sonomika/' + filename, 'assets/' + filename):
+            if owner is not None:
+                hits = owner.vfs.find(pattern=key)
+                if hits:
+                    return hits[0].virtualPath
     except Exception:
         pass
     rel_paths = (
+        ('assets', 'sonomika', filename),
         ('assets', filename),
+        ('SonomikaTD', 'assets', 'sonomika', filename),
         ('SonomikaTD', 'assets', filename),
     )
     candidates = []

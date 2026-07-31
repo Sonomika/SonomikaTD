@@ -181,7 +181,17 @@ def _set_level_premultiply(level, enabled=True):
             continue
 
 
-def _set_level_opacity(level, value):
+def _slot_already_premultiplied(slot):
+    """Logo overlays already emit premultiplied edges; remultiplying darkens them."""
+    if slot is None:
+        return False
+    try:
+        return bool(_is_logo_overlay_tox(slot.op('tox')))
+    except Exception:
+        return False
+
+
+def _set_level_opacity(level, value, premultiply=True):
     if level is None:
         return
     value = max(0.0, min(1.0, float(value)))
@@ -189,7 +199,7 @@ def _set_level_opacity(level, value):
         level.par.opacity = value
     except Exception:
         pass
-    _set_level_premultiply(level, True)
+    _set_level_premultiply(level, bool(premultiply))
 
 
 def _disconnect_input(input_connector):
@@ -236,9 +246,10 @@ def _ensure_slot_layer_blend(slot, layer=None):
         pass_sel.outputConnectors[0].connect(over.inputConnectors[1])
     except Exception:
         pass
-    _set_level_premultiply(level, True)
+    premul = not _slot_already_premultiplied(slot)
+    _set_level_premultiply(level, premul)
     if layer is not None:
-        _set_level_opacity(level, layer_opacity(layer))
+        _set_level_opacity(level, layer_opacity(layer), premultiply=premul)
     try:
         _connect_slot_content_to_level(slot, layer)
     except Exception:
@@ -320,7 +331,7 @@ def _heal_slot_layer_opacity_routing(slot, layer, col):
     if slot is None:
         return
     level = slot.op('layer_opacity')
-    _set_level_premultiply(level, True)
+    _set_level_premultiply(level, not _slot_already_premultiplied(slot))
     ctype, path = _get(int(layer), int(col))
     if path and _valid_clip_type(ctype):
         pick_idx = 1 if ctype == 'video' else 2
@@ -387,7 +398,7 @@ def _apply_opacity_to_slots(layer, value, cols):
             level = slot.op('layer_opacity')
         if _slot_level_opacity_is_expr(level):
             continue
-        _set_level_opacity(level, value)
+        _set_level_opacity(level, value, premultiply=not _slot_already_premultiplied(slot))
 
 
 def apply_layer_opacities():

@@ -1,7 +1,7 @@
 import os
 
 from performance_grid.builder.helpers_ui import _wire_scene_bar_dragdrop
-
+from performance_grid.constants_builder import *  # noqa: F401,F403
 
 def _ensure_column_xfade_nodes(root):
     """Builder/repair: chain_prev + chain_next -> column_xfade."""
@@ -492,7 +492,7 @@ def _build_brand_logo(bar):
     logo = bar.op('brand_logo')
     if logo is None:
         logo = bar.create('containerCOMP', 'brand_logo')
-    _set_par(logo, 'x', SCENE_BAR_LOGO_X)
+    _set_par(logo, 'x', SCENE_BAR_LOGO_X + SCENE_BAR_LOGO_X_NUDGE)
     logo_y = SCENE_BAR_CONTENT_Y + max(0, (SCENE_BTN_H - LOGO_H) // 2) + SCENE_BAR_LOGO_Y_NUDGE
     _set_par(logo, 'y', logo_y)
     _set_par(logo, 'w', LOGO_W)
@@ -557,7 +557,9 @@ def _build_brand_logo(bar):
 
 def _build_logo_path():
     rels = (
+        ('assets', 'sonomika', 'sonomika_logo.png'),
         ('assets', 'sonomika_logo.png'),
+        ('SonomikaTD', 'assets', 'sonomika', 'sonomika_logo.png'),
         ('SonomikaTD', 'assets', 'sonomika_logo.png'),
     )
     candidates = []
@@ -569,6 +571,9 @@ def _build_logo_path():
         pass
     env = os.environ.get('SONOMIKA_TD_ROOT', '').strip()
     if env:
+        candidates.append(
+            os.path.normpath(os.path.join(env, 'assets', 'sonomika', 'sonomika_logo.png')).replace('\\', '/')
+        )
         candidates.append(
             os.path.normpath(os.path.join(env, 'assets', 'sonomika_logo.png')).replace('\\', '/')
         )
