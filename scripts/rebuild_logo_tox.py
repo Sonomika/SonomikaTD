@@ -128,7 +128,8 @@ def _build(target):
     opacity.val = 1.0
     scale = page.appendFloat('Logoscale', label='Scale')[0]
     scale.normMin, scale.normMax, scale.clampMin = 0.01, 1.0, True
-    scale.val = 0.8
+    scale.val = 0.35
+    scale.default = 0.35
     posx = page.appendFloat('Positionx', label='Position X')[0]
     posx.normMin, posx.normMax = -1, 1
     posx.val = 0

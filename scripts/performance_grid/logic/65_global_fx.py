@@ -368,6 +368,73 @@ def _toggle_global_fx_expanded(fx_id):
     _refresh_global_fx_row(fx_id)
 
 
+def _global_fx_is_overlay_tox(t):
+    """Overlay-style TOXes output transparent plates and must composite Over, not replace."""
+    try:
+        return bool(_is_logo_overlay_tox(t))
+    except Exception:
+        return False
+
+
+def _ensure_global_fx_overlay_blend(slot):
+    """For logo/overlays: bypass wet path = tox over in_sel (keeps transparent BG)."""
+    if slot is None:
+        return False
+    t = slot.op('tox')
+    in_sel = slot.op('in_sel')
+    tox_pick = slot.op('tox_pick')
+    bypass = slot.op('bypass')
+    if t is None or in_sel is None or tox_pick is None or bypass is None:
+        return False
+    overlay = _global_fx_is_overlay_tox(t)
+    over = slot.op('fx_over')
+    if overlay:
+        if over is None:
+            try:
+                over = slot.create('overTOP', 'fx_over')
+            except Exception:
+                return False
+        try:
+            _bind_canvas_res(over)
+        except Exception:
+            pass
+        try:
+            # Input0 = overlay (logo), Input1 = program under it.
+            _disconnect_input(over.inputConnectors[0])
+            _disconnect_input(over.inputConnectors[1])
+            tox_pick.outputConnectors[0].connect(over.inputConnectors[0])
+            in_sel.outputConnectors[0].connect(over.inputConnectors[1])
+        except Exception:
+            pass
+        try:
+            # Keep logo on the transparent output path (not baked over video inside the tox).
+            ctx = t.op('logo_context_output')
+            if ctx is not None:
+                ctx.par.index = 0
+        except Exception:
+            pass
+        try:
+            # Always re-assert dry/wet. Connect replaces; do not disconnect first —
+            # Switch TOPs collapse unused inputs and drop inputConnectors[1].
+            in_sel.outputConnectors[0].connect(bypass.inputConnectors[0])
+            over.outputConnectors[0].connect(bypass.inputConnectors[1])
+        except Exception:
+            pass
+        return True
+    # Filter-style TOX: wet path is the tox output alone.
+    if over is not None:
+        try:
+            over.destroy()
+        except Exception:
+            pass
+    try:
+        in_sel.outputConnectors[0].connect(bypass.inputConnectors[0])
+        tox_pick.outputConnectors[0].connect(bypass.inputConnectors[1])
+    except Exception:
+        pass
+    return False
+
+
 def _feed_global_fx_tox(slot):
     t = slot.op('tox') if slot else None
     if t is None:
@@ -394,6 +461,7 @@ def _feed_global_fx_tox(slot):
             except Exception:
                 pass
     _apply_tox_render_scale(t)
+    _ensure_global_fx_overlay_blend(slot)
 
 
 def _refresh_global_fx_canvas_feed():

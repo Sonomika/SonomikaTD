@@ -3,6 +3,7 @@ import os
 
 _RECORDING_NORMALIZE_PROCESS = None
 _RECORDING_NORMALIZE_OUTPUT = ''
+_RECORDING_NORMALIZE_SOURCE = ''
 
 try:
     ParMode
@@ -82,6 +83,7 @@ def _set_recording_status(value):
 def _poll_recording_normalization():
     """Update the Rec status when the background FFmpeg job completes."""
     global _RECORDING_NORMALIZE_PROCESS, _RECORDING_NORMALIZE_OUTPUT
+    global _RECORDING_NORMALIZE_SOURCE
     process = _RECORDING_NORMALIZE_PROCESS
     if process is None:
         return
@@ -94,20 +96,41 @@ def _poll_recording_normalization():
         )
         return
     output_path = _RECORDING_NORMALIZE_OUTPUT
+    source_path = _RECORDING_NORMALIZE_SOURCE
     _RECORDING_NORMALIZE_PROCESS = None
     _RECORDING_NORMALIZE_OUTPUT = ''
+    _RECORDING_NORMALIZE_SOURCE = ''
     if result == 0 and os.path.isfile(output_path):
-        _set_recording_status(
-            'Normalized: {}'.format(os.path.basename(output_path)))
-        print('Normalized recording audio -> {}'.format(output_path))
+        # Keep a single file: replace the original with the normalized render.
+        final_path = source_path if source_path else output_path
+        try:
+            if source_path and os.path.abspath(output_path) != os.path.abspath(source_path):
+                os.replace(output_path, source_path)
+            _set_recording_status(
+                'Normalized: {}'.format(os.path.basename(final_path)))
+            print('Normalized recording audio -> {}'.format(final_path))
+        except Exception as exc:
+            _set_recording_status('Normalization failed (original kept)')
+            print('Could not replace original recording with normalized file: {}'.format(exc))
+            try:
+                if os.path.isfile(output_path) and output_path != source_path:
+                    os.remove(output_path)
+            except Exception:
+                pass
     else:
         _set_recording_status('Normalization failed (original kept)')
         print('Audio normalization failed; original recording was kept')
+        try:
+            if output_path and os.path.isfile(output_path):
+                os.remove(output_path)
+        except Exception:
+            pass
 
 
 def _normalize_recording_audio(path, target_lufs=-14):
-    """Create a loudness-normalized copy without blocking TouchDesigner."""
+    """Replace the recording with a loudness-normalized version (single file)."""
     global _RECORDING_NORMALIZE_PROCESS, _RECORDING_NORMALIZE_OUTPUT
+    global _RECORDING_NORMALIZE_SOURCE
     try:
         import shutil
         import subprocess
@@ -138,6 +161,7 @@ def _normalize_recording_audio(path, target_lufs=-14):
             print('Audio normalization skipped: FFmpeg was not found in PATH')
             return False
         stem, extension = os.path.splitext(path)
+        # Temp sidecar during FFmpeg; replaced over the original on success.
         output_path = '{}_normalized{}'.format(stem, extension)
         try:
             target_lufs = -10 if int(target_lufs) == -10 else -14
@@ -167,6 +191,7 @@ def _normalize_recording_audio(path, target_lufs=-14):
             creationflags=creationflags,
         )
         _RECORDING_NORMALIZE_OUTPUT = output_path
+        _RECORDING_NORMALIZE_SOURCE = path
         _set_recording_status('Normalizing audio...')
         _defer_run(
             _poll_recording_normalization,
@@ -177,6 +202,7 @@ def _normalize_recording_audio(path, target_lufs=-14):
     except Exception as exc:
         _RECORDING_NORMALIZE_PROCESS = None
         _RECORDING_NORMALIZE_OUTPUT = ''
+        _RECORDING_NORMALIZE_SOURCE = ''
         _set_recording_status('Normalization failed (original kept)')
         print('Audio normalization failed: {}'.format(exc))
         return False
