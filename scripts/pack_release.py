@@ -42,6 +42,9 @@ def _detect_next_version() -> str:
     latest = max(versions, key=key)
     nums = [int(p) for p in latest.split('.')]
     nums[-1] += 1
+    # Keep the historical X.YY zero-padded minor (1.07 -> 1.08, not 1.8).
+    if len(nums) == 2:
+        return f'{nums[0]}.{nums[1]:02d}'
     return '.'.join(str(n) for n in nums)
 
 
