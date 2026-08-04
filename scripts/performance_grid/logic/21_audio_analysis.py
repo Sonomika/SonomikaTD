@@ -199,6 +199,10 @@ _REMOVED_AUDIO_PARS = (
     'Audiohighrange',
     'Audiooutlowtrig',
     'Audioouthightrig',
+    'Audiotriggerskiplow',
+    'Audiotriggerskiphigh',
+    'Audiooutkickskipped',
+    'Audioouthitskipped',
     'Audiohistfreeze',
     'Audiomonitor',
 )
@@ -2130,6 +2134,16 @@ def _ensure_audio_engine():
     eng = r.op(AUDIO_ENGINE_NAME)
     if eng is None:
         eng = r.create('baseCOMP', AUDIO_ENGINE_NAME)
+    for stale_name in (
+        'trigger_low_skip_exec', 'trigger_high_skip_exec',
+        'trigger_low_skip_pass', 'trigger_high_skip_pass',
+    ):
+        stale = eng.op(stale_name)
+        if stale is not None:
+            try:
+                stale.destroy()
+            except Exception:
+                pass
 
     devin = eng.op('audiodevin1')
     if devin is None:

@@ -642,8 +642,18 @@ def _update_cell_params_ui(layer=None, col=None, force=False):
             return
         if mode == 'delayed':
             _update_selected_cell_info(layer, col)
+            # Cell clicks must show the Cell tab; delayed focus used to skip
+            # set_params_tab and left users staring at unchanged Global FX.
+            try:
+                set_params_tab('layer')
+            except Exception:
+                pass
             if _schedule_cell_params_ui(layer, col):
                 return
+    try:
+        set_params_tab('layer')
+    except Exception:
+        pass
     cell_change_log('cell_params_ui.start', 'L{} C{}'.format(layer, col))
     target, clip_type = _cell_params_op(layer, col)
     _selected_type, selected_path = _get(layer, col)

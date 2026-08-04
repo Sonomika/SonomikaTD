@@ -437,6 +437,25 @@ def _set_video_active(video, on):
     if video is None:
         return
     on = bool(on)
+    slot = None
+    try:
+        slot = video.parent()
+    except Exception:
+        slot = None
+    # Ping-pong ready: scrub the cache only — keep Movie File In frozen so
+    # reverse does not re-decode the file (that was the hitch).
+    if slot is not None and _pingpong_cache_ready(slot):
+        try:
+            video.par.playmode = 'sequential'
+        except Exception:
+            pass
+        # Stop decoder; allowCooking cannot be forced off on Movie File In TOPs.
+        try:
+            video.par.play = False
+        except Exception:
+            pass
+        _set_pingpong_play_gate(slot, on)
+        return
     try:
         video.par.playmode = 'sequential'
     except Exception:
@@ -449,6 +468,8 @@ def _set_video_active(video, on):
         video.allowCooking = on
     except Exception:
         pass
+    if slot is not None:
+        _set_pingpong_play_gate(slot, False)
 
 
 def _configure_scaled_top_res(top, scale):
@@ -793,6 +814,464 @@ def _ensure_freeze_hold(slot, source=None):
     return hold
 
 
+_VIDEO_PP_CACHE = 'video_pp_cache'
+_VIDEO_PP_SPEED = 'video_pp_speed'
+_VIDEO_PP_GATE = 'video_pp_gate'
+_VIDEO_PP_BUDGET = 384 * 1024 * 1024  # keep ping-pong cache modest
+
+
+def _video_loop_stored(slot, default='cycle'):
+    if slot is None:
+        return default
+    try:
+        mode = str(slot.fetch('sonomika_video_loop', default) or default).strip().lower()
+    except Exception:
+        mode = default
+    if mode in ('cycle', 'mirror', 'hold'):
+        return mode
+    return default
+
+
+def _store_video_loop(slot, mode):
+    if slot is None:
+        return
+    try:
+        slot.store('sonomika_video_loop', str(mode or 'cycle'))
+    except Exception:
+        pass
+
+
+def _pingpong_is_filling(slot):
+    if slot is None:
+        return False
+    try:
+        return bool(int(slot.fetch('sonomika_video_pp_filling', 0)))
+    except Exception:
+        return False
+
+
+def _pingpong_cache_ready(slot):
+    """True when mirror mode is scrubbing a filled cache (movie should stay frozen)."""
+    if slot is None or _video_loop_stored(slot) != 'mirror' or _pingpong_is_filling(slot):
+        return False
+    cache = slot.op(_VIDEO_PP_CACHE)
+    if cache is None:
+        return False
+    try:
+        if bool(cache.bypass) or bool(cache.par.active.eval()):
+            return False
+    except Exception:
+        return False
+    try:
+        return int(cache.width or 0) > 1 and int(cache.height or 0) > 1
+    except Exception:
+        return False
+
+
+def _set_pingpong_play_gate(slot, on):
+    """Advance the zigzag scrubber without cooking Movie File In."""
+    if slot is None:
+        return
+    gate = slot.op(_VIDEO_PP_GATE)
+    if gate is None:
+        gate = slot.create('constantCHOP', _VIDEO_PP_GATE)
+        try:
+            gate.nodeX = (slot.op(_VIDEO_PP_SPEED).nodeX if slot.op(_VIDEO_PP_SPEED) else 0)
+            gate.nodeY = (slot.op(_VIDEO_PP_SPEED).nodeY - 80 if slot.op(_VIDEO_PP_SPEED) else 0)
+        except Exception:
+            pass
+        try:
+            gate.par.name0 = 'gate'
+            gate.par.const0name = 'gate'
+        except Exception:
+            pass
+    try:
+        video = slot.op('video')
+        play_speed = (
+            abs(float(video.par.speed.eval())) if video is not None else 1.0)
+    except Exception:
+        play_speed = 1.0
+    try:
+        project_rate = max(float(absTime.frameRate or 60), 1.0)
+    except Exception:
+        project_rate = 60.0
+    try:
+        gate.par.value0 = project_rate * play_speed if on else 0.0
+        gate.allowCooking = True
+        gate.bypass = False
+    except Exception:
+        pass
+    speed = slot.op(_VIDEO_PP_SPEED)
+    if speed is None:
+        return
+    # Drive the Speed CHOP through its input for compatibility with TD builds
+    # that predate the newer standalone `speed` parameter. Without this
+    # connection those builds output zero and ping-pong freezes at the end.
+    try:
+        if (
+            not speed.inputConnectors[0].connections
+            or speed.inputConnectors[0].connections[0].owner != gate
+        ):
+            gate.outputConnectors[0].connect(speed.inputConnectors[0])
+    except Exception:
+        pass
+
+
+def _pingpong_timeline_frames(video):
+    """Number of project-frame snapshots needed for one full video pass."""
+    if video is None:
+        return 1
+    try:
+        source_frames = max(int(video.numImages or 1), 1)
+    except Exception:
+        source_frames = 1
+    try:
+        source_rate = max(float(video.rate or 1), 1.0)
+    except Exception:
+        source_rate = 1.0
+    try:
+        project_rate = max(float(absTime.frameRate or 60), 1.0)
+    except Exception:
+        project_rate = 60.0
+    try:
+        play_speed = max(abs(float(video.par.speed.eval())), 0.05)
+    except Exception:
+        play_speed = 1.0
+    duration = float(source_frames) / source_rate / play_speed
+    return max(int(round(duration * project_rate)), 2)
+
+
+def _pingpong_cache_dims(video, num_frames):
+    """Return (cache_frames, width, height) within the GPU memory budget."""
+    import math
+    w = max(int(getattr(video, 'width', 0) or 0), 1)
+    h = max(int(getattr(video, 'height', 0) or 0), 1)
+    n = max(int(num_frames or 1), 1)
+    # Prefer quarter resolution, then reduce it continuously as needed. Keep
+    # every timeline frame so long videos ping-pong over their full duration
+    # instead of silently looping only the portion that fits at 1/8 scale.
+    preferred_w = max(w // 4, 1)
+    preferred_h = max(h // 4, 1)
+    if n * preferred_w * preferred_h * 4 <= _VIDEO_PP_BUDGET:
+        return n, preferred_w, preferred_h
+    pixels_per_frame = max(int(_VIDEO_PP_BUDGET // max(n * 4, 1)), 1)
+    aspect = float(w) / float(max(h, 1))
+    bh = max(int(math.sqrt(float(pixels_per_frame) / max(aspect, 0.001))), 1)
+    bw = max(int(float(bh) * aspect), 1)
+    bw, bh = min(bw, preferred_w), min(bh, preferred_h)
+    while bw * bh > pixels_per_frame and (bw > 1 or bh > 1):
+        if bw >= bh and bw > 1:
+            bw -= 1
+        elif bh > 1:
+            bh -= 1
+    if n * bw * bh * 4 <= _VIDEO_PP_BUDGET:
+        return n, bw, bh
+    # Only extraordinarily long clips reach this 1x1 fallback.
+    max_n = max(2, int(_VIDEO_PP_BUDGET // 4))
+    return min(n, max_n), 1, 1
+
+
+def _wire_video_fit_source(slot, source):
+    """Point video_fit at movie or ping-pong cache."""
+    if slot is None or source is None:
+        return
+    fit = slot.op('video_fit')
+    if fit is None:
+        return
+    try:
+        if (
+            not fit.inputConnectors[0].connections
+            or fit.inputConnectors[0].connections[0].owner != source
+        ):
+            source.outputConnectors[0].connect(fit.inputConnectors[0])
+    except Exception:
+        pass
+
+
+def _disable_video_pingpong_cache(slot):
+    """Bypass cache scrubber; movie feeds video_fit directly."""
+    if slot is None:
+        return
+    video = slot.op('video')
+    cache = slot.op(_VIDEO_PP_CACHE)
+    speed = slot.op(_VIDEO_PP_SPEED)
+    try:
+        slot.store('sonomika_video_pp_filling', 0)
+    except Exception:
+        pass
+    if cache is not None:
+        try:
+            cache.par.active = False
+            cache.par.alwayscook = False
+            cache.bypass = True
+        except Exception:
+            pass
+    if speed is not None:
+        try:
+            speed.bypass = True
+            speed.allowCooking = False
+        except Exception:
+            pass
+    gate = slot.op(_VIDEO_PP_GATE)
+    if gate is not None:
+        try:
+            gate.par.value0 = 0
+            gate.bypass = True
+        except Exception:
+            pass
+    if video is not None:
+        _wire_video_fit_source(slot, video)
+
+
+def _finish_video_pingpong_fill(slot_path, token):
+    """Called after one forward pass — freeze cache and scrub for reverse."""
+    slot = op(slot_path) if slot_path else None
+    if slot is None:
+        return
+    try:
+        if int(slot.fetch('sonomika_video_pp_fill_token', 0)) != int(token):
+            return
+    except Exception:
+        return
+    if _video_loop_stored(slot) != 'mirror':
+        return
+    cache = slot.op(_VIDEO_PP_CACHE)
+    speed = slot.op(_VIDEO_PP_SPEED)
+    video = slot.op('video')
+    if cache is not None:
+        try:
+            cache.par.active = False
+            cache.bypass = False
+        except Exception:
+            pass
+    if speed is not None:
+        try:
+            speed.bypass = False
+            speed.allowCooking = True
+            speed.par.resetpulse.pulse()
+        except Exception:
+            pass
+    if video is not None:
+        for par_name in ('textendleft', 'textendright'):
+            try:
+                getattr(video.par, par_name).val = 'cycle'
+            except Exception:
+                pass
+        # Freeze decoder — scrubber gate drives motion from here on.
+        try:
+            video.par.play = False
+        except Exception:
+            pass
+    if cache is not None:
+        _wire_video_fit_source(slot, cache)
+    try:
+        slot.store('sonomika_video_pp_filling', 0)
+    except Exception:
+        pass
+    # Restore play gate from live composition state (not Movie File In.play).
+    try:
+        layer, col = _slot_layer_col(slot)
+        playing = bool(global_transport_playing() and _video_slot_should_play(layer, col))
+        _set_pingpong_play_gate(slot, playing)
+    except Exception:
+        _set_pingpong_play_gate(slot, True)
+    print('Ping pong ready ({})'.format(slot_path))
+
+
+def _start_video_pingpong_fill(slot):
+    """Record a forward playthrough into Cache TOP, then scrub for ping-pong."""
+    import td
+    if slot is None:
+        return False
+    video = slot.op('video')
+    cache = slot.op(_VIDEO_PP_CACHE)
+    if video is None or cache is None:
+        return False
+    try:
+        num = max(int(video.numImages or 1), 1)
+    except Exception:
+        num = 1
+    try:
+        cache_n = max(int(cache.par.cachesize.eval()), 2)
+    except Exception:
+        cache_n = num
+    # Show live movie while filling; switch to cache when done.
+    _wire_video_fit_source(slot, video)
+    try:
+        token = int(slot.fetch('sonomika_video_pp_fill_token', 0)) + 1
+    except Exception:
+        token = 1
+    try:
+        slot.store('sonomika_video_pp_fill_token', token)
+        slot.store('sonomika_video_pp_filling', 1)
+    except Exception:
+        pass
+    try:
+        video.allowCooking = True
+        video.par.playmode = 'sequential'
+        video.par.play = True
+        video.par.textendleft = 'hold'
+        video.par.textendright = 'hold'
+        video.par.indexunit = 'indices'
+        video.par.index = 0
+        video.par.cuepulse.pulse()
+    except Exception:
+        pass
+    _set_pingpong_play_gate(slot, False)
+    try:
+        cache.bypass = False
+        cache.allowCooking = True
+        cache.par.alwayscook = True
+        cache.par.active = True
+        cache.par.resetpulse.pulse()
+    except Exception:
+        pass
+    try:
+        vspeed = max(abs(float(video.par.speed.eval())), 0.05)
+    except Exception:
+        vspeed = 1.0
+    # Cache TOP records once per project frame, so cache size is already in
+    # project-frame snapshots. Keep only one synchronization frame after the
+    # pass; a larger margin records repeated held frames and creates a visible
+    # pause whenever ping-pong changes direction.
+    delay = int(cache_n / vspeed) + 1
+    delay = max(2, delay)
+    slot_path = slot.path
+    try:
+        td.run(
+            lambda: _finish_video_pingpong_fill(slot_path, token),
+            delayFrames=int(delay),
+            fromOP=_root() or slot,
+        )
+    except Exception:
+        _finish_video_pingpong_fill(slot_path, token)
+    print('Ping pong: caching {} frames…'.format(cache_n))
+    return True
+
+
+def _enable_video_pingpong_cache(slot, reprefill=True):
+    """Cache frames on a forward pass, then scrub (fast reverse, no decode)."""
+    if slot is None:
+        return False
+    video = slot.op('video')
+    fit = slot.op('video_fit')
+    if video is None or fit is None:
+        return False
+    try:
+        num = int(video.numImages or 1)
+    except Exception:
+        num = 1
+    if num <= 1 or int(getattr(video, 'width', 0) or 0) < 2:
+        _disable_video_pingpong_cache(slot)
+        return False
+    timeline_n = _pingpong_timeline_frames(video)
+    cache_n, cw, ch = _pingpong_cache_dims(video, timeline_n)
+    cache = slot.op(_VIDEO_PP_CACHE)
+    if cache is None:
+        cache = slot.create('cacheTOP', _VIDEO_PP_CACHE)
+        try:
+            cache.nodeX = video.nodeX + 70
+            cache.nodeY = video.nodeY - 120
+        except Exception:
+            pass
+    speed = slot.op(_VIDEO_PP_SPEED)
+    if speed is None:
+        speed = slot.create('speedCHOP', _VIDEO_PP_SPEED)
+        try:
+            speed.nodeX = cache.nodeX
+            speed.nodeY = cache.nodeY - 120
+        except Exception:
+            pass
+    try:
+        cache.bypass = False
+        cache.allowCooking = True
+        cache.par.outputresolution = 'custom'
+        cache.par.resolutionw = int(cw)
+        cache.par.resolutionh = int(ch)
+        cache.par.resmult = False
+        cache.par.format = 'rgba8fixed'
+        cache.par.cachesize = int(cache_n)
+        cache.par.step = 1
+        cache.par.interp = False
+        cache.par.outputindexunit = 'indices'
+        cache.par.alwayscook = True
+        # Cache TOP: 0 = newest, negative = older. Calculate the zigzag from
+        # the actual cache size here instead of relying on Speed CHOP's limit
+        # range, which can clamp large maxima and create a tiny repeated loop.
+        cache.par.outputindex.expr = (
+            "-abs((float(op('{speed}')[0]) % (2.0 * max(float("
+            "op('{cache}').par.cachesize.eval() - 1), 1.0))) - "
+            "max(float(op('{cache}').par.cachesize.eval() - 1), 1.0))"
+        ).format(speed=_VIDEO_PP_SPEED, cache=_VIDEO_PP_CACHE)
+    except Exception:
+        pass
+    try:
+        speed.bypass = True  # enabled after fill completes
+        speed.allowCooking = True
+        speed.par.limittype = 'off'
+    except Exception:
+        pass
+    _set_pingpong_play_gate(slot, False)
+    try:
+        if (
+            not cache.inputConnectors[0].connections
+            or cache.inputConnectors[0].connections[0].owner != video
+        ):
+            video.outputConnectors[0].connect(cache.inputConnectors[0])
+    except Exception:
+        pass
+    filling = _pingpong_is_filling(slot)
+    if reprefill:
+        _start_video_pingpong_fill(slot)
+    elif _pingpong_cache_ready(slot):
+        try:
+            speed.bypass = False
+            video.par.play = False
+        except Exception:
+            pass
+        _wire_video_fit_source(slot, cache)
+        try:
+            layer, col = _slot_layer_col(slot)
+            playing = bool(global_transport_playing() and _video_slot_should_play(layer, col))
+        except Exception:
+            playing = False
+        _set_pingpong_play_gate(slot, playing)
+    if cache_n < timeline_n:
+        print(
+            'Ping pong: using {}/{} timeline frames at {}x{}'.format(
+                cache_n, timeline_n, cw, ch))
+    return True
+
+
+def _apply_video_loop_mode(slot, mode=None, reprefill=True):
+    """Apply cycle / native full-clip ping-pong / hold to a video slot."""
+    if slot is None:
+        return None
+    video = slot.op('video')
+    if video is None:
+        return None
+    mode = str(mode or _video_loop_stored(slot) or 'cycle').strip().lower()
+    if mode not in ('cycle', 'mirror', 'hold'):
+        mode = 'cycle'
+    _store_video_loop(slot, mode)
+    # TouchDesigner's native Mirror extension always uses the complete movie.
+    # The former GPU Cache TOP workaround could truncate long clips and become
+    # trapped in a short repeated section, so it is no longer used for playback.
+    _disable_video_pingpong_cache(slot)
+    try:
+        video.par.playmode = 'sequential'
+    except Exception:
+        pass
+    for par_name in ('textendleft', 'textendright'):
+        try:
+            par = getattr(video.par, par_name)
+            par.mode = ParMode.CONSTANT
+            par.val = mode
+        except Exception:
+            pass
+    return mode
+
+
 def _ensure_video_fit(slot):
     """fitTOP between movie and pick: cover canvas, preserve aspect."""
     if slot is None:
@@ -822,9 +1301,10 @@ def _ensure_video_fit(slot):
     _configure_video_source(video, scale)
     _configure_video_fit(fit, scale)
     _configure_tox_fit(canvas_fit)
+    _disable_video_pingpong_cache(slot)
+    src = video
     try:
-        if not fit.inputConnectors[0].connections or fit.inputConnectors[0].connections[0].owner != video:
-            video.outputConnectors[0].connect(fit.inputConnectors[0])
+        _wire_video_fit_source(slot, src)
         if not canvas_fit.inputConnectors[0].connections or canvas_fit.inputConnectors[0].connections[0].owner != fit:
             fit.outputConnectors[0].connect(canvas_fit.inputConnectors[0])
         if not pick.inputConnectors[1].connections or pick.inputConnectors[1].connections[0].owner != canvas_fit:
@@ -2051,6 +2531,16 @@ def _wire_video(slot, path, play=False, resume=False, force_reload=False):
                     pass
             if not play:
                 _set_video_active(v, False)
+    # Ordinary videos dropped into cells always begin with the original Cycle
+    # behaviour. Advanced Video owns the optional playback loop treatments.
+    try:
+        if file_changed:
+            _store_video_loop(slot, 'cycle')
+        loop_mode = _video_loop_stored(slot, 'cycle')
+        if loop_mode == 'mirror' or file_changed:
+            _apply_video_loop_mode(slot, loop_mode, reprefill=bool(file_changed and loop_mode == 'mirror'))
+    except Exception:
+        pass
     pick = slot.op('pick')
     if pick is not None:
         pick.par.index = 1

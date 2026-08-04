@@ -1800,6 +1800,10 @@ def trigger_cell(layer, col):
         _schedule_selected_cell_ui(delay=12)
     elif param_focus_mode == 'delayed':
         try:
+            set_params_tab('layer')
+        except Exception:
+            pass
+        try:
             _schedule_cell_params_ui(layer, col, delay_frames=18)
         except Exception:
             pass

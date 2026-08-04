@@ -324,6 +324,86 @@ def toggle_cell_freeze(layer, col):
     return set_cell_frozen(layer, col, not get_cell_frozen(layer, col))
 
 
+# Video loop modes. Ping-pong uses Movie File In's full-clip Mirror extension.
+_VIDEO_LOOP_MODES = (
+    ('cycle', 'Loop Cycle'),
+    ('mirror', 'Loop Ping Pong (HAP Video)'),
+)
+
+
+def get_cell_video_loop(layer, col):
+    """Return current video loop mode name: cycle, mirror, or hold."""
+    layer, col = int(layer), int(col)
+    ctype, path = _cell_content(layer, col)
+    if ctype != 'video' or not path:
+        return 'cycle'
+    slot = _slot(layer, col)
+    if slot is not None:
+        try:
+            stored = _video_loop_stored(slot, '')
+            if stored in {name for name, _ in _VIDEO_LOOP_MODES}:
+                return stored
+        except Exception:
+            pass
+    video = slot.op('video') if slot is not None else None
+    if video is None:
+        return 'cycle'
+    try:
+        mode = str(video.par.textendright.eval()).strip().lower()
+    except Exception:
+        mode = 'cycle'
+    allowed = {name for name, _ in _VIDEO_LOOP_MODES}
+    return mode if mode in allowed else 'cycle'
+
+
+def set_cell_video_loop(layer, col, mode):
+    """Set the Movie File In loop mode for this cell."""
+    layer, col = int(layer), int(col)
+    mode = str(mode or 'cycle').strip().lower()
+    allowed = {name for name, _ in _VIDEO_LOOP_MODES}
+    if mode not in allowed:
+        mode = 'cycle'
+    ctype, path = _cell_content(layer, col)
+    if ctype != 'video' or not path:
+        return None
+    slot = _slot(layer, col)
+    if slot is None or slot.op('video') is None:
+        return None
+    try:
+        _ensure_video_fit(slot)
+    except Exception:
+        pass
+    try:
+        mode = _apply_video_loop_mode(slot, mode, reprefill=True) or mode
+    except Exception as exc:
+        print('Video loop apply error:', exc)
+        return None
+    try:
+        records = _snapshot_cell_params(layer, col, ctype)
+        _remember_cell_par_last_good(layer, col, ctype, path, records)
+    except Exception:
+        pass
+    try:
+        _update_cell_params_ui(layer, col)
+    except Exception:
+        pass
+    label = dict(_VIDEO_LOOP_MODES).get(mode, mode)
+    print('{} row {} col {}'.format(label, layer, col))
+    return mode
+
+
+def video_loop_menu_items(layer, col):
+    """Right-click labels for video loop modes, with (current) marker."""
+    current = get_cell_video_loop(layer, col)
+    items = []
+    for name, label in _VIDEO_LOOP_MODES:
+        if name == current:
+            items.append('{} (current)'.format(label))
+        else:
+            items.append(label)
+    return items
+
+
 def _resolve_tox_edit_path(stored_path='', tox_comp=None):
     """Resolve a .tox file on disk from stored path and/or live component."""
     candidates = []
@@ -433,7 +513,9 @@ def _copyable_cell_params(target, clip_type):
         except Exception:
             pass
     elif clip_type == 'video':
-        for name in ('play', 'speed', 'index', 'textendright', 'trim'):
+        for name in (
+            'play', 'speed', 'index', 'textendleft', 'textendright', 'trim',
+        ):
             try:
                 out.append(getattr(target.par, name))
             except Exception:
@@ -445,6 +527,12 @@ def _snapshot_cell_params(layer, col, clip_type=None):
     clip_type = clip_type or _cell_content(layer, col)[0]
     target = _cell_param_target(layer, col, clip_type)
     records = []
+    logical_loop = None
+    if clip_type == 'video':
+        try:
+            logical_loop = get_cell_video_loop(layer, col)
+        except Exception:
+            logical_loop = None
     for par in _copyable_cell_params(target, clip_type):
         rec = {'name': par.name}
         try:
@@ -458,6 +546,8 @@ def _snapshot_cell_params(layer, col, clip_type=None):
                 rec['val'] = par.val
             except Exception:
                 pass
+        if logical_loop and par.name in ('textendleft', 'textendright'):
+            rec['val'] = logical_loop
         try:
             expr = str(par.expr or '').strip()
             if expr and mode_name in ('EXPRESSION', 'EXPRESS'):
@@ -538,9 +628,19 @@ def _restore_cell_params(layer, col, clip_type, records):
     if target is None:
         return 0
     restored = 0
+    loop_mode = None
     for rec in records:
+        rec_name = str(rec.get('name', '') or '')
+        if clip_type == 'video' and rec_name in ('textendleft', 'textendright'):
+            try:
+                candidate = str(rec.get('val', '') or '').strip().lower()
+            except Exception:
+                candidate = ''
+            if candidate in ('cycle', 'mirror', 'hold'):
+                loop_mode = candidate
+            continue
         try:
-            par = getattr(target.par, rec.get('name', ''))
+            par = getattr(target.par, rec_name)
         except Exception:
             continue
         try:
@@ -583,6 +683,12 @@ def _restore_cell_params(layer, col, clip_type, records):
                 par.mode = ParMode.CONSTANT
             except Exception:
                 pass
+            restored += 1
+        except Exception:
+            pass
+    if clip_type == 'video' and loop_mode:
+        try:
+            set_cell_video_loop(layer, col, loop_mode)
             restored += 1
         except Exception:
             pass
