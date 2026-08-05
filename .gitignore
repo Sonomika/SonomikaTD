@@ -37,6 +37,11 @@ Backup/
 # Local third-party TouchDesigner effects
 tox2/
 
+# Local texture_to_particles (not part of this repo)
+production/tox/texture_to_particles/
+production/tox/texture_to_particles */
+production/assets/texture_to_particles/
+
 # Premium TOX live in private SonomikaTD_FX:
 # https://github.com/Sonomika/SonomikaTD_FX
 tox premium/
