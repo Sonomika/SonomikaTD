@@ -503,6 +503,70 @@ def edit_tox_cell(layer, col):
     return open_tox_for_edit(tox_path)
 
 
+def _open_folder_in_os(folder):
+    """Reveal a folder in the OS file browser (Explorer / Finder / xdg-open)."""
+    folder = str(folder or '').strip().replace('\\', '/')
+    if not folder or not os.path.isdir(folder):
+        return False
+    try:
+        ui.viewFile(folder)
+        return True
+    except Exception:
+        pass
+    try:
+        if hasattr(os, 'startfile'):
+            os.startfile(folder.replace('/', '\\'))
+            return True
+    except Exception:
+        pass
+    try:
+        import subprocess
+        import sys
+        opener = 'open' if sys.platform == 'darwin' else 'xdg-open'
+        subprocess.Popen([opener, folder])
+        return True
+    except Exception as exc:
+        print('Open folder failed:', folder, exc)
+        return False
+
+
+def _resolve_cell_source_file(layer, col):
+    """Absolute path to the cell's original TOX/video file on disk, if found."""
+    layer, col = int(layer), int(col)
+    clip_type, path = _cell_content(layer, col)
+    if not path or not _valid_clip_type(clip_type):
+        return ''
+    if clip_type == 'tox':
+        return _resolve_cell_tox_edit_path(layer, col)
+    resolved = _norm_asset_path(path)
+    if resolved and os.path.isfile(resolved):
+        return resolved
+    try:
+        display = _resolve_display_asset_path(resolved or path, clip_type)
+        if display and os.path.isfile(display):
+            return display
+    except Exception:
+        pass
+    return ''
+
+
+def open_cell_source_folder(layer, col):
+    """Open the folder that contains this cell's original TOX or video file."""
+    layer, col = int(layer), int(col)
+    file_path = _resolve_cell_source_file(layer, col)
+    if not file_path:
+        print('No source file for row {} col {}'.format(layer, col))
+        return False
+    folder = os.path.dirname(file_path)
+    if not folder or not os.path.isdir(folder):
+        print('Source folder missing for row {} col {}: {}'.format(layer, col, folder))
+        return False
+    if _open_folder_in_os(folder):
+        print('Opened source folder:', folder)
+        return True
+    return False
+
+
 def _copyable_cell_params(target, clip_type):
     if target is None:
         return []

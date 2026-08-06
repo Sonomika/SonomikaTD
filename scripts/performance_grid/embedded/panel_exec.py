@@ -405,10 +405,12 @@ def _open_cell_menu(owner, layer, col):
     except Exception:
         pass
     freeze_item = 'Unfreeze Cell' if frozen else 'Freeze Cell'
-    items = ['Reload', 'Relink', 'Edit TOX'] + render_items + [freeze_item, 'Copy', 'Cut', 'Paste', 'Delete']
+    items = [
+        'Reload', 'Relink', 'Edit TOX', 'Open Source Folder',
+    ] + render_items + [freeze_item, 'Copy', 'Cut', 'Paste', 'Delete']
     disabled = []
     if not path:
-        disabled.extend(['Reload', 'Relink', 'Edit TOX', 'Copy', 'Cut'])
+        disabled.extend(['Reload', 'Relink', 'Edit TOX', 'Open Source Folder', 'Copy', 'Cut'])
         disabled.extend(render_items)
         disabled.append(freeze_item)
     elif clip_type != 'tox':
@@ -431,6 +433,9 @@ def _open_cell_menu(owner, layer, col):
         elif choice == 'Edit TOX':
             if hasattr(logic, 'edit_tox_cell'):
                 logic.edit_tox_cell(layer, col)
+        elif choice == 'Open Source Folder':
+            if hasattr(logic, 'open_cell_source_folder'):
+                logic.open_cell_source_folder(layer, col)
         elif choice.startswith('Render Scale '):
             try:
                 pct = int(choice.replace('Render Scale ', '').split('%')[0])
@@ -457,7 +462,7 @@ def _open_cell_menu(owner, layer, col):
             callback=_menu_choice,
             disabledItems=disabled,
             dividersAfterItems=[
-                'Edit TOX',
+                'Open Source Folder',
                 'Render Scale 25%', 'Render Scale 25% (current)',
                 freeze_item,
                 'Cut', 'Paste', 'Delete',
