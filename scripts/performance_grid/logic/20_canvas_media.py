@@ -442,6 +442,32 @@ def _set_video_active(video, on):
         slot = video.parent()
     except Exception:
         slot = None
+    # Still images: keep locked + cooking so upstream consumers (face_isolator)
+    # do not re-decode a PNG/JPEG every frame via sequential playmode.
+    try:
+        path = str(video.par.file.eval() or '')
+    except Exception:
+        path = ''
+    if _path_is_still_image(path):
+        try:
+            video.par.playmode = 'locked'
+        except Exception:
+            try:
+                video.par.playmode = 'specifyindex'
+                video.par.index = 0
+            except Exception:
+                pass
+        try:
+            video.par.play = False
+        except Exception:
+            pass
+        try:
+            video.allowCooking = True
+        except Exception:
+            pass
+        if slot is not None:
+            _set_pingpong_play_gate(slot, False)
+        return
     # Ping-pong ready: scrub the cache only — keep Movie File In frozen so
     # reverse does not re-decode the file (that was the hitch).
     if slot is not None and _pingpong_cache_ready(slot):
@@ -2492,6 +2518,17 @@ def _wire_tox(slot, path, layer=None, col=None, force_reload=False):
         _set_video_active(v, False)
 
 
+def _path_is_still_image(path):
+    """True for still image files loaded via Movie File In (not movies)."""
+    try:
+        ext = os.path.splitext(str(path or '').strip())[1].lower()
+    except Exception:
+        return False
+    return ext in (
+        '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.webp', '.gif', '.exr', '.hdr',
+    )
+
+
 def _wire_video(slot, path, play=False, resume=False, force_reload=False):
     v = slot.op('video')
     if v is None:
@@ -2510,8 +2547,33 @@ def _wire_video(slot, path, play=False, resume=False, force_reload=False):
             v.par.reloadpulse.pulse()
         except Exception:
             pass
-    _set_video_active(v, play)
-    if not _video_timeline_locked(v) and (file_changed or resume or force_reload):
+    still = _path_is_still_image(path)
+    if still:
+        # Stills must not stay in sequential "play" — that re-decodes every frame
+        # and tanks any tox (e.g. face_isolator) reading this slot as upstream.
+        try:
+            v.par.playmode = 'locked'
+        except Exception:
+            try:
+                v.par.playmode = 'specifyindex'
+                v.par.index = 0
+            except Exception:
+                pass
+        try:
+            v.par.play = False
+        except Exception:
+            pass
+        try:
+            v.allowCooking = True
+        except Exception:
+            pass
+        try:
+            v.preload(0)
+        except Exception:
+            pass
+    else:
+        _set_video_active(v, play)
+    if not still and not _video_timeline_locked(v) and (file_changed or resume or force_reload):
         try:
             # Cue/cook the new file even when inactive so thumbnails do not show
             # the Movie File In TOP's stale frame from the previous clip.

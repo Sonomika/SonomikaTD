@@ -742,7 +742,19 @@ def _restore_cell_params(layer, col, clip_type, records):
         except Exception:
             pass
         try:
-            par.val = rec.get('val')
+            val = rec.get('val')
+            if isinstance(val, str):
+                raw = val.strip().strip('"')
+                if raw and (
+                    os.path.sep in raw
+                    or '/' in raw
+                    or (len(raw) > 1 and raw[1] == ':')
+                    or os.path.splitext(raw)[1].lower() in VIDEO_EXTS
+                ):
+                    resolved = _norm_asset_path(raw)
+                    if resolved and os.path.isfile(resolved):
+                        val = resolved
+            par.val = val
             try:
                 par.mode = ParMode.CONSTANT
             except Exception:

@@ -230,6 +230,195 @@ def _set_package_status(message):
             pass
 
 
+def _package_media_exts():
+    exts = set(VIDEO_EXTS)
+    exts.update({
+        '.wav', '.mp3', '.aif', '.aiff', '.flac', '.ogg', '.m4a',
+    })
+    return exts
+
+
+def _package_side_asset_dirs_for_tox(tox_path):
+    """Extra asset folders required by specific TOXes (preserve relative paths)."""
+    name = os.path.basename(str(tox_path or '')).lower()
+    dirs = []
+    if 'face_isolator' in name or 'human_object_tracker' in name:
+        dirs.append('assets/human_object_tracker')
+    return dirs
+
+
+def _collect_package_path_records(state):
+    """Clip/FX `path` keys plus media file paths stored in par_state vals."""
+    path_records = []
+    media_exts = _package_media_exts()
+    # Only these params store real filesystem media paths.
+    # Do NOT match Status strings like "Loaded foo.mov".
+    media_par_names = {
+        'videofile', 'moviefile', 'imagefile', 'file', 'audiofile', 'soundfile',
+    }
+
+    def _looks_like_path(raw):
+        if not raw:
+            return False
+        if os.path.isfile(raw):
+            return True
+        if os.path.sep in raw or '/' in raw:
+            return True
+        if len(raw) > 1 and raw[1] == ':':
+            return True
+        return False
+
+    def _walk(value):
+        if isinstance(value, dict):
+            # Standard clip/FX asset path
+            stored = value.get('path')
+            if isinstance(stored, str) and stored.strip():
+                path_records.append((value, 'path', stored.strip()))
+            # Advanced Video / movie params live in par_state, not `path`
+            name = str(value.get('name', '') or '').strip()
+            val = value.get('val')
+            if (
+                name
+                and name.lower() in media_par_names
+                and isinstance(val, str)
+                and val.strip()
+            ):
+                raw = val.strip().strip('"')
+                ext = os.path.splitext(raw)[1].lower()
+                if ext in media_exts and _looks_like_path(raw):
+                    path_records.append((value, 'val', raw))
+            for item in value.values():
+                _walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                _walk(item)
+
+    _walk(state)
+    return path_records
+
+
+def _copy_package_side_assets(temp_root, project_root, tox_sources, missing):
+    """Copy TOX side-asset trees (e.g. YuNet models) with stable relative paths."""
+    import shutil
+
+    copied = []
+    seen = set()
+    for tox_source in tox_sources:
+        for rel_dir in _package_side_asset_dirs_for_tox(tox_source):
+            key = rel_dir.replace('\\', '/').lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            src_dir = os.path.normpath(os.path.join(project_root, *rel_dir.split('/')))
+            if not os.path.isdir(src_dir):
+                missing.append(rel_dir)
+                continue
+            file_count = 0
+            for folder, _, filenames in os.walk(src_dir):
+                for filename in filenames:
+                    full_path = os.path.join(folder, filename)
+                    rel_inside = os.path.relpath(full_path, src_dir)
+                    destination = os.path.join(
+                        temp_root,
+                        *rel_dir.split('/'),
+                        *rel_inside.split(os.sep),
+                    )
+                    os.makedirs(os.path.dirname(destination), exist_ok=True)
+                    shutil.copy2(full_path, destination)
+                    file_count += 1
+            if file_count <= 0:
+                missing.append(rel_dir)
+            else:
+                copied.append('{} ({} files)'.format(rel_dir, file_count))
+    return copied
+
+
+def _resolve_package_source_path(stored, set_path):
+    """Resolve a package file path, including names that contain … ellipsis."""
+    import glob
+
+    raw = str(stored or '').strip().strip('"')
+    if not raw:
+        return ''
+    source = _resolve_asset_for_open_set(raw, set_path)
+    if source and os.path.isfile(source):
+        return os.path.abspath(source)
+    if os.path.isfile(raw):
+        return os.path.abspath(raw)
+
+    # True truncation recovery: "foo…bar.mov" / "foo...bar.mov" → glob foo*bar.mov
+    name = os.path.basename(raw)
+    folder = os.path.dirname(raw)
+    marker = None
+    if '\u2026' in name:
+        marker = '\u2026'
+    elif '...' in name:
+        marker = '...'
+    if marker and folder and os.path.isdir(folder):
+        left, right = name.split(marker, 1)
+        pattern = os.path.join(folder, '{}*{}'.format(left, right))
+        matches = [p for p in glob.glob(pattern) if os.path.isfile(p)]
+        if len(matches) == 1:
+            return os.path.abspath(matches[0])
+        if len(matches) > 1:
+            # Prefer exact suffix/extension match count proximity
+            matches.sort(key=lambda p: abs(len(os.path.basename(p)) - len(name)))
+            return os.path.abspath(matches[0])
+    return ''
+
+
+def _hydrate_package_state_from_live_grid(state):
+    """Prefer live TOX media params (e.g. Videofile) over stale set JSON values."""
+    clips = state.get('clips')
+    if not isinstance(clips, list):
+        return
+    media_names = {
+        'videofile', 'moviefile', 'imagefile', 'file', 'audiofile', 'soundfile',
+    }
+    for row in clips:
+        if not isinstance(row, dict) or str(row.get('type', '')).lower() != 'tox':
+            continue
+        try:
+            layer = int(row.get('layer'))
+            col = int(row.get('col'))
+        except Exception:
+            continue
+        try:
+            slot = _slot(layer, col)
+            tox = slot.op('tox') if slot is not None else None
+        except Exception:
+            tox = None
+        if tox is None:
+            continue
+        par_state = row.get('par_state')
+        if not isinstance(par_state, list):
+            par_state = []
+            row['par_state'] = par_state
+        by_name = {}
+        for rec in par_state:
+            if isinstance(rec, dict) and rec.get('name'):
+                by_name[str(rec.get('name'))] = rec
+        for par in getattr(tox, 'customPars', []) or []:
+            try:
+                pname = str(par.name)
+            except Exception:
+                continue
+            if pname.lower() not in media_names:
+                continue
+            try:
+                live_val = str(par.eval()).strip()
+            except Exception:
+                continue
+            if not live_val or not os.path.isfile(live_val):
+                continue
+            rec = by_name.get(pname)
+            if rec is None:
+                rec = {'name': pname}
+                par_state.append(rec)
+                by_name[pname] = rec
+            rec['val'] = live_val
+
+
 def make_package_from_current_set():
     """Create an installable ZIP from the set currently shown in Open File."""
     import copy
@@ -276,25 +465,16 @@ def make_package_from_current_set():
         os.path.splitext(os.path.basename(set_path))[0],
     ).strip('_').lower() or 'sonomika_package'
     state = copy.deepcopy(original_state)
-    path_records = []
-
-    def _collect_paths(value):
-        if isinstance(value, dict):
-            for key, item in value.items():
-                if key == 'path' and isinstance(item, str) and item.strip():
-                    path_records.append((value, key, item.strip()))
-                else:
-                    _collect_paths(item)
-        elif isinstance(value, list):
-            for item in value:
-                _collect_paths(item)
-
-    _collect_paths(state)
+    try:
+        _hydrate_package_state_from_live_grid(state)
+    except Exception as exc:
+        print('Make package: live grid hydrate skipped:', exc)
+    path_records = _collect_package_path_records(state)
     project_root = os.path.abspath(str(project.folder))
     resolved_records = []
     missing = []
     for owner, key, stored in path_records:
-        source = _resolve_asset_for_open_set(stored, set_path)
+        source = _resolve_package_source_path(stored, set_path)
         if not source or not os.path.isfile(source):
             missing.append(stored)
         else:
@@ -327,6 +507,7 @@ def make_package_from_current_set():
             os.makedirs(os.path.join(temp_root, 'tox', slug), exist_ok=True)
             source_destinations = {}
             used_destinations = set()
+            tox_sources = []
             for owner, key, stored, source in resolved_records:
                 source_key = os.path.normcase(source)
                 relative = source_destinations.get(source_key)
@@ -349,8 +530,22 @@ def make_package_from_current_set():
                     source_destinations[source_key] = relative
                     destination = os.path.join(
                         temp_root, *relative.split('/'))
+                    os.makedirs(os.path.dirname(destination), exist_ok=True)
                     shutil.copy2(source, destination)
+                    if category == 'tox':
+                        tox_sources.append(source)
                 owner[key] = relative
+
+            side_missing = []
+            side_copied = _copy_package_side_assets(
+                temp_root, project_root, tox_sources, side_missing)
+            if side_missing:
+                _set_package_status(
+                    'Missing side assets: {}'.format(side_missing[0]))
+                print('Make package missing side assets:', side_missing)
+                return False
+            if side_copied:
+                print('Package side assets:', side_copied)
 
             packaged_set = os.path.join(
                 temp_root, 'sets', slug + '.json')
