@@ -2567,10 +2567,14 @@ def _wire_video(slot, path, play=False, resume=False, force_reload=False):
             v.allowCooking = True
         except Exception:
             pass
-        try:
-            v.preload(0)
-        except Exception:
-            pass
+        if file_changed:
+            # Only re-read the still when the file actually changed. The 45-frame
+            # auto-heal re-runs _wire_video; preloading every time made the
+            # Movie File In drop the image and blank for a few frames (flash).
+            try:
+                v.preload(0)
+            except Exception:
+                pass
     else:
         _set_video_active(v, play)
     if not still and not _video_timeline_locked(v) and (file_changed or resume or force_reload):
