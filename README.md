@@ -32,6 +32,7 @@ SonomikaTD/
 | `scripts/performance_grid/builder/` | Network build, patch, reload API |
 | `production/templates/midi/` | MIDI mapping templates |
 | `production/tox/` | Factory / MIT sample TOX assets |
+| `production/tox/tanomind/` | Generic Tanomind Control host (TD ↔ agents ↔ Ableton OSC) |
 | `tox premium/` | Local-only premium effects — tracked in [SonomikaTD_FX](https://github.com/Sonomika/SonomikaTD_FX) |
 | `release/` | Local distribution builds (not in git) |
 
@@ -64,6 +65,16 @@ exec(open(r'D:/your/path/SonomikaTD/run_in_td.py').read())
 ```
 
 ---
+
+## Tanomind Control host
+
+Generic tox so agents can drive TD / Ableton via Tanomind Control API. See [production/tox/tanomind/README.md](production/tox/tanomind/README.md).
+
+Build once in Textport:
+
+```python
+exec(open(r'C:/path/to/SonomikaTD/scripts/build_tanomind_tox.py', encoding='utf-8').read())
+```
 
 ## Reloading scripts
 
